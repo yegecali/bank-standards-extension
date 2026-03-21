@@ -4,6 +4,7 @@
   "description": "VSCode extension for bank coding standards via Notion or Confluence — naming conventions, test reviews, project scaffolding, and AI agent.",
   "version": "0.0.6",
   "publisher": "yemicanchari",
+  "preview": true,
   "license": "MIT",
   "icon": "images/icon.png",
   "repository": {
