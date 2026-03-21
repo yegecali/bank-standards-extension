@@ -134,14 +134,22 @@ export function parsePromptLibrary(blocks: KnowledgeBlock[]): PromptTemplate[] {
 
     if (block.type === "heading2" && block.text) {
       flush();
-      const name = block.text.trim().toLowerCase().replace(/\s+/g, "-");
-      log(`[parsePromptLibrary] 📌 H2 detected → prompt name: "${name}"`);
+      // Strip common Confluence prefixes like "Prompts: " or "Prompt - "
+      // and remove special characters that would break the slug
+      const name = block.text
+        .trim()
+        .toLowerCase()
+        .replace(/^prompts?\s*[:\-–]\s*/i, "")   // remove "Prompts: " prefix
+        .replace(/[^\w\s-]/g, "")                 // remove special chars
+        .trim()
+        .replace(/\s+/g, "-");                    // spaces to hyphens
+      log(`[parsePromptLibrary] 📌 H2 detected → raw: "${block.text.trim()}" → slug: "${name}"`);
       current = { name };
       continue;
     }
 
     if (block.type === "heading1" || block.type === "heading3") {
-      log(`[parsePromptLibrary] ⚠️ Heading found but NOT H2 (type="${block.type}") — will NOT start a prompt. Use Heading 2.`);
+      log(`[parsePromptLibrary] ⚠️ Heading NOT H2 (type="${block.type}") — ignoring. Use Heading 2 to start a prompt.`);
     }
 
     if (!current) {
@@ -149,18 +157,36 @@ export function parsePromptLibrary(blocks: KnowledgeBlock[]): PromptTemplate[] {
       continue;
     }
 
-    if (block.type === "paragraph" && block.text) {
-      if (!current.description) {
-        current.description = block.text.trim();
-        log(`[parsePromptLibrary] 📝 Description set for "${current.name}": "${current.description.slice(0, 60)}"`);
+    if (block.type === "code" && block.text) {
+      if (!current.template) {
+        current.template = block.text.trim();
+        log(`[parsePromptLibrary] 💻 Code block → template set for "${current.name}": ${current.template.length} chars`);
       }
       continue;
     }
 
-    if (block.type === "code" && block.text) {
-      if (!current.template) {
-        current.template = block.text.trim();
-        log(`[parsePromptLibrary] 💻 Code block (template) set for "${current.name}": ${current.template.length} chars`);
+    if (block.type === "paragraph" && block.text) {
+      const text = block.text.trim();
+      if (!current.description) {
+        current.description = text;
+        log(`[parsePromptLibrary] 📝 Description set for "${current.name}": "${text.slice(0, 60)}"`);
+      } else if (!current.template) {
+        // No code block yet — start building template from paragraphs
+        current.template = text;
+        log(`[parsePromptLibrary] 📄 Template started from paragraph for "${current.name}": "${text.slice(0, 60)}"`);
+      } else {
+        // Accumulate subsequent paragraphs into the template
+        current.template += "\n" + text;
+        log(`[parsePromptLibrary] 📄 Template appended paragraph for "${current.name}" (+${text.length} chars)`);
+      }
+      continue;
+    }
+
+    if ((block.type === "bullet" || block.type === "numbered") && block.text) {
+      const text = block.text.trim();
+      if (current.template !== undefined) {
+        current.template += "\n- " + text;
+        log(`[parsePromptLibrary] 📄 Template appended bullet for "${current.name}"`);
       }
       continue;
     }
