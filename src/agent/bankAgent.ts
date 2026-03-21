@@ -24,7 +24,17 @@ interface ChatResultMetadata {
 }
 
 export function registerBankAgent(context: vscode.ExtensionContext): void {
-  const participant = vscode.chat.createChatParticipant(PARTICIPANT_ID, makeHandler(context));
+  console.log(`[BankAgent] Creating chat participant — id: "${PARTICIPANT_ID}"`);
+
+  let participant: vscode.ChatParticipant;
+  try {
+    participant = vscode.chat.createChatParticipant(PARTICIPANT_ID, makeHandler(context));
+    console.log(`[BankAgent] Chat participant created OK — id: "${PARTICIPANT_ID}"`);
+  } catch (err: unknown) {
+    console.error(`[BankAgent] FAILED to create chat participant:`, err);
+    throw err;
+  }
+
   participant.iconPath = vscode.Uri.joinPath(context.extensionUri, "images", "bank-agent.svg");
 
   // ─── Follow-up suggestions ──────────────────────────────────────────────────
