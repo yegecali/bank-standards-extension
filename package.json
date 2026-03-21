@@ -2,7 +2,7 @@
   "name": "bank-standards-extension",
   "displayName": "Bank Standards Extension",
   "description": "VSCode extension for bank coding standards via Notion or Confluence — naming conventions, test reviews, project scaffolding, and AI agent.",
-  "version": "0.0.12",
+  "version": "0.0.13",
   "publisher": "yemicanchari",
   "preview": true,
   "license": "MIT",
