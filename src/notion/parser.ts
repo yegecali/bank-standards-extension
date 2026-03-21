@@ -1,4 +1,5 @@
 import { KnowledgeBlock } from "../knowledge/KnowledgeProvider";
+import { log } from "../logger";
 
 export interface NamingRule {
   context: string;
@@ -110,29 +111,48 @@ export function parsePromptLibrary(blocks: KnowledgeBlock[]): PromptTemplate[] {
   const prompts: PromptTemplate[] = [];
   let current: Partial<PromptTemplate> | null = null;
 
+  log(`[parsePromptLibrary] Starting — total blocks: ${blocks.length}`);
+  log(`[parsePromptLibrary] Block types: ${blocks.map((b) => b.type).join(", ")}`);
+
   const flush = () => {
     if (current?.name && current.template) {
+      log(`[parsePromptLibrary] ✅ Prompt saved — name: "${current.name}", desc: "${(current.description ?? "").slice(0, 40)}…", template: ${current.template.length} chars`);
       prompts.push({
         name: current.name,
         description: current.description ?? current.template.slice(0, 80),
         template: current.template,
       });
+    } else if (current?.name) {
+      log(`[parsePromptLibrary] ⚠️ Skipped "${current.name}" — missing: ${!current.template ? "code block (template)" : ""}${!current.description ? " description" : ""}`);
     }
     current = null;
   };
 
-  for (const block of blocks) {
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i];
+    log(`[parsePromptLibrary] Block[${i}] type="${block.type}" text="${(block.text ?? "").slice(0, 60)}"`);
+
     if (block.type === "heading2" && block.text) {
       flush();
-      current = { name: block.text.trim().toLowerCase().replace(/\s+/g, "-") };
+      const name = block.text.trim().toLowerCase().replace(/\s+/g, "-");
+      log(`[parsePromptLibrary] 📌 H2 detected → prompt name: "${name}"`);
+      current = { name };
       continue;
     }
 
-    if (!current) continue;
+    if (block.type === "heading1" || block.type === "heading3") {
+      log(`[parsePromptLibrary] ⚠️ Heading found but NOT H2 (type="${block.type}") — will NOT start a prompt. Use Heading 2.`);
+    }
+
+    if (!current) {
+      log(`[parsePromptLibrary] Block[${i}] skipped — no active H2 heading above it`);
+      continue;
+    }
 
     if (block.type === "paragraph" && block.text) {
       if (!current.description) {
         current.description = block.text.trim();
+        log(`[parsePromptLibrary] 📝 Description set for "${current.name}": "${current.description.slice(0, 60)}"`);
       }
       continue;
     }
@@ -140,12 +160,16 @@ export function parsePromptLibrary(blocks: KnowledgeBlock[]): PromptTemplate[] {
     if (block.type === "code" && block.text) {
       if (!current.template) {
         current.template = block.text.trim();
+        log(`[parsePromptLibrary] 💻 Code block (template) set for "${current.name}": ${current.template.length} chars`);
       }
       continue;
     }
+
+    log(`[parsePromptLibrary] Block[${i}] type="${block.type}" ignored inside prompt "${current.name}"`);
   }
 
   flush();
+  log(`[parsePromptLibrary] Done — ${prompts.length} prompts parsed: [${prompts.map((p) => p.name).join(", ")}]`);
   return prompts;
 }
 
