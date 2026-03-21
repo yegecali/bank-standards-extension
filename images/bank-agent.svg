@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <!-- Background circle -->
+  <circle cx="50" cy="50" r="50" fill="#1a1a2e"/>
+
+  <!-- Bank building columns -->
+  <rect x="22" y="42" width="8" height="28" rx="2" fill="#4f8ef7"/>
+  <rect x="34" y="42" width="8" height="28" rx="2" fill="#4f8ef7"/>
+  <rect x="46" y="42" width="8" height="28" rx="2" fill="#4f8ef7"/>
+  <rect x="58" y="42" width="8" height="28" rx="2" fill="#4f8ef7"/>
+  <rect x="70" y="42" width="8" height="28" rx="2" fill="#4f8ef7"/>
+
+  <!-- Base -->
+  <rect x="18" y="68" width="64" height="6" rx="2" fill="#4f8ef7"/>
+
+  <!-- Pedestal -->
+  <rect x="22" y="74" width="56" height="4" rx="1" fill="#3a7bd5"/>
+
+  <!-- Roof / triangle -->
+  <polygon points="50,18 18,42 82,42" fill="#4f8ef7"/>
+
+  <!-- Roof highlight -->
+  <polygon points="50,22 22,42 78,42" fill="#5a9ef8"/>
+
+  <!-- Star / badge on roof -->
+  <circle cx="50" cy="34" r="5" fill="#ffd700"/>
+</svg>

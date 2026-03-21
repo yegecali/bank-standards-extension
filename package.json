@@ -1,0 +1,262 @@
+{
+  "name": "bank-standards-extension",
+  "displayName": "Bank Standards Extension",
+  "description": "VSCode extension for bank coding standards via Notion or Confluence — naming conventions, test reviews, project scaffolding, and AI agent.",
+  "version": "0.0.2",
+  "publisher": "yemicanchari",
+  "license": "MIT",
+  "icon": "images/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yegecali/bank-standards-extension"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other",
+    "AI",
+    "Linters"
+  ],
+  "keywords": [
+    "bank",
+    "standards",
+    "naming conventions",
+    "copilot",
+    "notion",
+    "confluence",
+    "java",
+    "quarkus"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "chatParticipants": [
+      {
+        "id": "bankStandards.agent",
+        "name": "bank",
+        "fullName": "Bank Standards Agent",
+        "description": "Consulta estándares, crea proyectos y revisa tests según las guías del banco",
+        "isSticky": true,
+        "icon": "images/bank-agent.svg",
+        "commands": [
+          {
+            "name": "standards",
+            "description": "Consulta las convenciones de nomenclatura del banco"
+          },
+          {
+            "name": "review",
+            "description": "Revisa el archivo activo en el editor contra los estándares del banco"
+          },
+          {
+            "name": "create",
+            "description": "Genera un proyecto Maven + Java 21 + Quarkus desde la plantilla de Notion"
+          },
+          {
+            "name": "prompts",
+            "description": "Lista los prompts disponibles o aplica uno: /prompts <nombre>"
+          },
+          {
+            "name": "specialty",
+            "description": "Cambia la especialidad activa (frontend, backend, qa) o lista las disponibles"
+          }
+        ],
+        "disambiguation": [
+          {
+            "category": "bank_coding_standards",
+            "description": "Questions about bank coding standards, naming conventions, test patterns (Triple AAA), or Maven/Quarkus project scaffolding",
+            "examples": [
+              "¿cómo debo nombrar los métodos en Java?",
+              "revisa mis tests contra el patrón AAA",
+              "crea un proyecto base con quarkus y maven",
+              "qué convención uso para constantes en TypeScript",
+              "analiza si este test cumple los estándares del banco"
+            ]
+          }
+        ]
+      }
+    ],
+    "languageModelTools": [
+      {
+        "name": "bank_get_standards",
+        "displayName": "Get Bank Coding Standards",
+        "modelDescription": "Retrieves the bank's official coding standards and naming conventions (camelCase, PascalCase, UPPER_SNAKE, etc.). Use this when the user asks about naming conventions, coding rules, how to name methods, variables, constants, classes, or any coding standards question.",
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "bankStandards",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "topic": {
+              "type": "string",
+              "description": "Optional topic to filter the standards (e.g. 'java methods', 'constants', 'test functions')"
+            },
+            "specialty": {
+              "type": "string",
+              "description": "Optional specialty to use (e.g. 'frontend', 'backend', 'qa'). Defaults to the active specialty in settings."
+            }
+          }
+        }
+      },
+      {
+        "name": "bank_review_test",
+        "displayName": "Review Test File",
+        "modelDescription": "Reads the currently open test file in the editor and fetches the bank's test standards (Triple AAA pattern). Use this when the user asks to review, analyze, validate, or check a test file against bank standards.",
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "bankReview",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "specialty": {
+              "type": "string",
+              "description": "Optional specialty to use (e.g. 'frontend', 'backend', 'qa'). Defaults to the active specialty in settings."
+            }
+          }
+        }
+      },
+      {
+        "name": "bank_create_project",
+        "displayName": "Create Bank Project",
+        "modelDescription": "Creates a new Maven + Java 21 + Quarkus project using the bank's official project template. Use this when the user asks to create, generate, scaffold, build, or initialize a new project or service.",
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "bankCreate",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "projectName": {
+              "type": "string",
+              "description": "Name of the project in lowercase-with-hyphens format (e.g. 'payment-service', 'user-api')"
+            },
+            "specialty": {
+              "type": "string",
+              "description": "Optional specialty to use (e.g. 'frontend', 'backend', 'qa'). Defaults to the active specialty in settings."
+            }
+          }
+        }
+      }
+    ],
+    "commands": [
+      {
+        "command": "bankStandards.newProject",
+        "title": "Bank: New Project Guide"
+      },
+      {
+        "command": "bankStandards.refreshStandards",
+        "title": "Bank: Refresh Standards from Notion"
+      }
+    ],
+    "configuration": {
+      "title": "Bank Standards",
+      "properties": {
+        "bankStandards.knowledgeSource": {
+          "type": "string",
+          "enum": [
+            "notion",
+            "confluence"
+          ],
+          "default": "notion",
+          "description": "Knowledge source to use: 'notion' or 'confluence'"
+        },
+        "bankStandards.notionToken": {
+          "type": "string",
+          "default": "",
+          "description": "Notion Integration Token (from notion.so/my-integrations)"
+        },
+        "bankStandards.confluenceUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Confluence Cloud base URL (e.g. https://yourbank.atlassian.net)"
+        },
+        "bankStandards.confluenceEmail": {
+          "type": "string",
+          "default": "",
+          "description": "Atlassian account email used for API authentication"
+        },
+        "bankStandards.confluenceToken": {
+          "type": "string",
+          "default": "",
+          "description": "Confluence API token (from id.atlassian.com/manage-profile/security/api-tokens)"
+        },
+        "bankStandards.specialty": {
+          "type": "string",
+          "default": "backend",
+          "description": "Active specialty: backend, frontend, qa, or any custom value defined in specialtiesMap"
+        },
+        "bankStandards.specialtiesMap": {
+          "type": "object",
+          "default": {},
+          "description": "Map of specialties to their page IDs. Each specialty can define: standards, testing, project, prompts. Example: { \"backend\": { \"standards\": \"<id>\", \"testing\": \"<id>\" }, \"frontend\": { \"standards\": \"<id>\" } }",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "standards": {
+                "type": "string",
+                "description": "Page ID for naming convention rules"
+              },
+              "testing": {
+                "type": "string",
+                "description": "Page ID for test standards"
+              },
+              "project": {
+                "type": "string",
+                "description": "Page ID for project template"
+              },
+              "prompts": {
+                "type": "string",
+                "description": "Page ID for prompt library"
+              }
+            }
+          }
+        },
+        "bankStandards.pagesMap": {
+          "type": "object",
+          "default": {
+            "standards": "",
+            "project": "",
+            "testing": "",
+            "prompts": ""
+          },
+          "description": "Legacy flat map of page types to page IDs (used as fallback when specialtiesMap is not configured)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "test": "jest"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "roots": [
+      "<rootDir>/src/test"
+    ],
+    "moduleNameMapper": {
+      "^vscode$": "<rootDir>/src/test/__mocks__/vscode.ts"
+    },
+    "transform": {
+      "^.+\\.tsx?$": [
+        "ts-jest",
+        {}
+      ]
+    }
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "jest": "^30.3.0",
+    "ts-jest": "^29.4.6",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "@vscode/prompt-tsx": "^0.4.0-alpha.8",
+    "axios": "^1.6.0"
+  }
+}
