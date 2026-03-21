@@ -10,9 +10,12 @@ const SUPPORTED_LANGUAGES = [
   "java",
 ];
 
+const DEBOUNCE_MS = 300;
+
 export class DiagnosticProvider {
   private collection: vscode.DiagnosticCollection;
   private rules: NamingRule[] = [];
+  private debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(context: vscode.ExtensionContext) {
     this.collection =
@@ -21,15 +24,15 @@ export class DiagnosticProvider {
 
     // Validate on open
     context.subscriptions.push(
-      vscode.workspace.onDidOpenTextDocument((doc) => this.validate(doc)),
+      vscode.workspace.onDidOpenTextDocument((doc) => this.scheduleValidation(doc)),
     );
 
-    // Validate on save
+    // Validate on save (debounced — rapid saves won't trigger multiple scans)
     context.subscriptions.push(
-      vscode.workspace.onDidSaveTextDocument((doc) => this.validate(doc)),
+      vscode.workspace.onDidSaveTextDocument((doc) => this.scheduleValidation(doc)),
     );
 
-    // Validate all open editors on rule update
+    // Validate all open editors on startup
     vscode.workspace.textDocuments.forEach((doc) => this.validate(doc));
   }
 
@@ -37,6 +40,17 @@ export class DiagnosticProvider {
     this.rules = rules;
     // Re-validate all open documents with the new rules
     vscode.workspace.textDocuments.forEach((doc) => this.validate(doc));
+  }
+
+  private scheduleValidation(document: vscode.TextDocument): void {
+    const key = document.uri.toString();
+    const existing = this.debounceTimers.get(key);
+    if (existing) clearTimeout(existing);
+    const timer = setTimeout(() => {
+      this.debounceTimers.delete(key);
+      this.validate(document);
+    }, DEBOUNCE_MS);
+    this.debounceTimers.set(key, timer);
   }
 
   private validate(document: vscode.TextDocument): void {
@@ -61,6 +75,8 @@ export class DiagnosticProvider {
   }
 
   dispose(): void {
+    this.debounceTimers.forEach((t) => clearTimeout(t));
+    this.debounceTimers.clear();
     this.collection.dispose();
   }
 }

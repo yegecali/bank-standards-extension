@@ -12,8 +12,8 @@ export type KnowledgeBlockType =
 
 export interface KnowledgeBlock {
   type: KnowledgeBlockType;
-  /** Plain text content of the block */
-  text: string;
+  /** Plain text content of the block (optional for table/divider blocks) */
+  text?: string;
   /** Only for type="code" */
   language?: string;
   /** Only for type="table_row" — one string per cell */

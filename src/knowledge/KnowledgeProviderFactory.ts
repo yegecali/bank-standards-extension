@@ -5,25 +5,46 @@ import { ConfluenceKnowledgeProvider } from "./providers/ConfluenceKnowledgeProv
 
 export type KnowledgeSourceType = "notion" | "confluence";
 
+let cachedProvider: KnowledgeProvider | null = null;
+let cachedSource: string | null = null;
+
 /**
- * Reads bankStandards.knowledgeSource from settings and returns
- * the matching KnowledgeProvider instance.
- *
- * Defaults to "notion" if not configured.
+ * Returns a singleton KnowledgeProvider for the configured knowledge source.
+ * The instance is reused across requests unless the source setting changes.
+ * Call resetKnowledgeProvider() to force recreation (e.g. after settings change).
  */
 export function createKnowledgeProvider(): KnowledgeProvider {
   const config = vscode.workspace.getConfiguration("bankStandards");
   const source = (config.get<string>("knowledgeSource") ?? "notion") as KnowledgeSourceType;
 
+  if (cachedProvider && cachedSource === source) {
+    return cachedProvider;
+  }
+
   console.log(`[KnowledgeProviderFactory] Creating provider for source: "${source}"`);
 
   switch (source) {
     case "notion":
-      return new NotionKnowledgeProvider();
+      cachedProvider = new NotionKnowledgeProvider();
+      break;
     case "confluence":
-      return new ConfluenceKnowledgeProvider();
+      cachedProvider = new ConfluenceKnowledgeProvider();
+      break;
     default:
       console.warn(`[KnowledgeProviderFactory] Unknown source "${source}", falling back to Notion`);
-      return new NotionKnowledgeProvider();
+      cachedProvider = new NotionKnowledgeProvider();
   }
+
+  cachedSource = source;
+  return cachedProvider;
+}
+
+/**
+ * Clears the cached provider instance.
+ * Should be called when knowledge source settings change.
+ */
+export function resetKnowledgeProvider(): void {
+  cachedProvider = null;
+  cachedSource = null;
+  console.log("[KnowledgeProviderFactory] Provider cache cleared");
 }

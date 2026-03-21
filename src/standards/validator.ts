@@ -16,10 +16,15 @@ export interface Violation {
  *   - contextHints: keywords that identify what kind of identifier it is
  *                   (matched against NamingRule.context)
  */
-const EXTRACTOR_PATTERNS: Array<{
-  regex: RegExp;
+interface ExtractorPattern {
+  source: string;
+  flags: string;
   contextHints: string[];
-}> = [
+}
+
+/** Compiled once at module load — cloned per-call to reset lastIndex */
+const EXTRACTOR_PATTERNS: ExtractorPattern[] = ((): ExtractorPattern[] => {
+  const raw: Array<{ regex: RegExp; contextHints: string[] }> = [
   // function declarations: function myFunc(
   {
     regex: /\bfunction\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/g,
@@ -60,7 +65,9 @@ const EXTRACTOR_PATTERNS: Array<{
     regex: /@Test[\s\S]{0,80}?\bvoid\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\(/g,
     contextHints: ["test", "tests", "test functions", "test methods"],
   },
-];
+  ];
+  return raw.map((p) => ({ source: p.regex.source, flags: p.regex.flags, contextHints: p.contextHints }));
+})();
 
 export function findViolations(
   document: vscode.TextDocument,
@@ -73,7 +80,8 @@ export function findViolations(
   const seen = new Set<string>(); // avoid duplicate diagnostics for same identifier
 
   for (const pattern of EXTRACTOR_PATTERNS) {
-    const regex = new RegExp(pattern.regex.source, pattern.regex.flags);
+    // Clone from pre-compiled source/flags to reset lastIndex without recompiling
+    const regex = new RegExp(pattern.source, pattern.flags);
     let match: RegExpExecArray | null;
 
     while ((match = regex.exec(text)) !== null) {

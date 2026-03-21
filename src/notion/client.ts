@@ -33,8 +33,7 @@ export class NotionClient {
       );
     }
 
-    // Show only first/last 4 chars for safe logging: secret_****...****
-    this.tokenPreview = `${token.slice(0, 10)}...${token.slice(-4)}`;
+    this.tokenPreview = "[redacted]";
 
     console.log(`[NotionClient] Initialized — token: ${this.tokenPreview}`);
     console.log(`[NotionClient] Base URL: https://api.notion.com/v1`);
@@ -130,9 +129,7 @@ function logAxiosError(context: string, err: unknown): void {
     const url     = err.config?.url;
     const headers = JSON.stringify({
       "Notion-Version": err.config?.headers?.["Notion-Version"],
-      "Authorization":  err.config?.headers?.["Authorization"]
-        ? `Bearer ${String(err.config.headers["Authorization"]).slice(7, 17)}...`
-        : "missing",
+      "Authorization":  err.config?.headers?.["Authorization"] ? "Bearer [redacted]" : "missing",
     });
     console.error(`[NotionClient] ERROR at ${context}`);
     console.error(`  Status  : ${status}`);

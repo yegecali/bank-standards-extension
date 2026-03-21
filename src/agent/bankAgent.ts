@@ -18,6 +18,11 @@ import {
 
 const PARTICIPANT_ID = "bankStandards.agent";
 
+interface ChatResultMetadata {
+  intent: string;
+  specialty?: string;
+}
+
 export function registerBankAgent(context: vscode.ExtensionContext): void {
   const participant = vscode.chat.createChatParticipant(PARTICIPANT_ID, makeHandler(context));
   participant.iconPath = vscode.Uri.joinPath(context.extensionUri, "images", "bank-agent.svg");
@@ -29,7 +34,7 @@ export function registerBankAgent(context: vscode.ExtensionContext): void {
       _context: vscode.ChatContext,
       _token: vscode.CancellationToken
     ): vscode.ChatFollowup[] {
-      const intent = (result.metadata as any)?.intent as string | undefined;
+      const intent = (result.metadata as ChatResultMetadata | undefined)?.intent;
       const followups: vscode.ChatFollowup[] = [];
 
       if (intent !== "testing") {
@@ -83,6 +88,10 @@ function makeHandler(context: vscode.ExtensionContext): vscode.ChatRequestHandle
     const promptSpecialty  = detectSpecialtyFromPrompt(userPrompt, knownSpecialties);
     const specialty        = promptSpecialty ?? getActiveSpecialty();
     console.log(`[BankAgent] Specialty: "${specialty}" (${promptSpecialty ? "detected from prompt" : "from settings"})`);
+
+    if (promptSpecialty) {
+      stream.progress(`Usando especialidad: ${promptSpecialty}`);
+    }
 
     // 2 — Pick the right page: explicit slash command takes precedence over keyword detection
     const pageKey = resolvePageKey(request.command, userPrompt);

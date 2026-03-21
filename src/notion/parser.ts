@@ -162,7 +162,7 @@ export function blocksToMarkdown(blocks: KnowledgeBlock[]): string {
     const text = block.type === "table_row"
       ? (block.cells ?? []).join(" | ")
       : (block.text ?? "");
-    if (!text) continue;
+    if (!text && block.type !== "divider") continue;
 
     switch (block.type) {
       case "heading1":  lines.push(`# ${text}`);  break;

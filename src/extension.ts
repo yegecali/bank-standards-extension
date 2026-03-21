@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { NamingRule, parseNamingRules, parseProjectSteps } from "./notion/parser";
 import { resolveWithCache, clearCache } from "./notion/cache";
-import { createKnowledgeProvider } from "./knowledge/KnowledgeProviderFactory";
+import { createKnowledgeProvider, resetKnowledgeProvider } from "./knowledge/KnowledgeProviderFactory";
 import { DiagnosticProvider } from "./providers/diagnosticProvider";
 import { BankStandardsCodeActionProvider } from "./providers/codeActionProvider";
 import { StatusBarProvider } from "./providers/statusBarProvider";
@@ -45,9 +45,23 @@ export function activate(context: vscode.ExtensionContext) {
   const refreshCmd = vscode.commands.registerCommand(
     "bankStandards.refreshStandards",
     async () => {
+      resetKnowledgeProvider();
       await clearCache(context);
       await refreshStandards();
     }
+  );
+
+  // Reset provider singleton when knowledge source settings change
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration("bankStandards.knowledgeSource") ||
+          e.affectsConfiguration("bankStandards.notionToken") ||
+          e.affectsConfiguration("bankStandards.confluenceUrl") ||
+          e.affectsConfiguration("bankStandards.confluenceEmail") ||
+          e.affectsConfiguration("bankStandards.confluenceToken")) {
+        resetKnowledgeProvider();
+      }
+    })
   );
 
   const newProjectCmd = vscode.commands.registerCommand(
