@@ -100,6 +100,43 @@ export class ConfluenceClient {
     }
   }
 
+  /**
+   * Lists all available Confluence spaces the user has access to.
+   */
+  async getSpaces(): Promise<Array<{ id: string; key: string; name: string }>> {
+    this.validateConfig();
+    const url = `${this.baseUrl}/wiki/api/v2/spaces?limit=50&sort=name`;
+    console.log(`[ConfluenceClient] GET spaces: ${url}`);
+    try {
+      const { data } = await axios.get(url, { headers: this.headers() });
+      return (data.results ?? []).map((s: Record<string, unknown>) => ({
+        id:   String(s["id"]),
+        key:  String(s["key"]),
+        name: String(s["name"]),
+      }));
+    } catch (err) {
+      throw this.wrapError(err, url);
+    }
+  }
+
+  /**
+   * Lists pages inside a Confluence space by space ID.
+   */
+  async getPagesInSpace(spaceId: string): Promise<Array<{ id: string; title: string }>> {
+    this.validateConfig();
+    const url = `${this.baseUrl}/wiki/api/v2/spaces/${spaceId}/pages?limit=250&sort=title`;
+    console.log(`[ConfluenceClient] GET pages in space ${spaceId}: ${url}`);
+    try {
+      const { data } = await axios.get(url, { headers: this.headers() });
+      return (data.results ?? []).map((p: Record<string, unknown>) => ({
+        id:    String(p["id"]),
+        title: String(p["title"]),
+      }));
+    } catch (err) {
+      throw this.wrapError(err, url);
+    }
+  }
+
   // ─── Helpers ───────────────────────────────────────────────────────────────
 
   private validateConfig(): void {

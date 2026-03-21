@@ -10,6 +10,7 @@ import { GetStandardsTool } from "./agent/tools/GetStandardsTool";
 import { ReviewTestTool } from "./agent/tools/ReviewTestTool";
 import { CreateProjectTool } from "./agent/tools/CreateProjectTool";
 import { initLogger, log, logError, showChannel } from "./logger";
+import { setupConfluenceCommand } from "./commands/setupConfluenceCommand";
 
 let diagnosticProvider: DiagnosticProvider;
 let extensionContext: vscode.ExtensionContext;
@@ -107,7 +108,12 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
 
-  context.subscriptions.push(refreshCmd, newProjectCmd);
+  const setupConfluenceCmd = vscode.commands.registerCommand(
+    "bankStandards.setupConfluence",
+    setupConfluenceCommand
+  );
+
+  context.subscriptions.push(refreshCmd, newProjectCmd, setupConfluenceCmd);
 
   log("── activate() complete ✓ ─────────────────────────────────────");
 

@@ -145,6 +145,10 @@
       {
         "command": "bankStandards.refreshStandards",
         "title": "Bank: Refresh Standards from Notion"
+      },
+      {
+        "command": "bankStandards.setupConfluence",
+        "title": "Bank: Setup Confluence Space"
       }
     ],
     "configuration": {
