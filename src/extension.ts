@@ -9,52 +9,59 @@ import { registerBankAgent } from "./agent/bankAgent";
 import { GetStandardsTool } from "./agent/tools/GetStandardsTool";
 import { ReviewTestTool } from "./agent/tools/ReviewTestTool";
 import { CreateProjectTool } from "./agent/tools/CreateProjectTool";
+import { initLogger, log, logError, showChannel } from "./logger";
 
 let diagnosticProvider: DiagnosticProvider;
 let extensionContext: vscode.ExtensionContext;
 
 export function activate(context: vscode.ExtensionContext) {
-  console.log("[BankStandards] ── activate() start ──────────────────────────");
-  console.log(`[BankStandards] Extension path : ${context.extensionUri.fsPath}`);
-  console.log(`[BankStandards] VS Code version: ${vscode.version}`);
-  console.log(`[BankStandards] Storage path   : ${context.globalStorageUri?.fsPath ?? "n/a"}`);
+  const outputChannel = initLogger();
+  context.subscriptions.push(outputChannel);
+
+  log("── activate() start ──────────────────────────────────────────");
+  log(`Extension path : ${context.extensionUri.fsPath}`);
+  log(`VS Code version: ${vscode.version}`);
+  log(`Storage path   : ${context.globalStorageUri?.fsPath ?? "n/a"}`);
 
   // Log current settings (no sensitive values)
   const cfg = vscode.workspace.getConfiguration("bankStandards");
-  console.log(`[BankStandards] knowledgeSource: ${cfg.get("knowledgeSource") ?? "(not set)"}`);
-  console.log(`[BankStandards] notionToken    : ${cfg.get<string>("notionToken") ? "configured" : "NOT SET"}`);
-  console.log(`[BankStandards] confluenceUrl  : ${cfg.get("confluenceUrl") || "(not set)"}`);
-  console.log(`[BankStandards] specialty      : ${cfg.get("specialty") ?? "(not set)"}`);
+  log(`knowledgeSource: ${cfg.get("knowledgeSource") ?? "(not set)"}`);
+  log(`notionToken    : ${cfg.get<string>("notionToken") ? "✓ configured" : "✗ NOT SET"}`);
+  log(`confluenceUrl  : ${cfg.get("confluenceUrl") || "(not set)"}`);
+  log(`specialty      : ${cfg.get("specialty") ?? "(not set)"}`);
   const pagesMap = cfg.get<Record<string, string>>("pagesMap") ?? {};
   const specialtiesMap = cfg.get<Record<string, unknown>>("specialtiesMap") ?? {};
-  console.log(`[BankStandards] pagesMap keys  : ${Object.keys(pagesMap).join(", ") || "(empty)"}`);
-  console.log(`[BankStandards] specialties    : ${Object.keys(specialtiesMap).join(", ") || "(empty)"}`);
+  log(`pagesMap keys  : ${Object.keys(pagesMap).join(", ") || "(empty)"}`);
+  log(`specialties    : ${Object.keys(specialtiesMap).join(", ") || "(empty)"}`);
+
+  // Show the output channel automatically so the user can see logs
+  showChannel();
 
   extensionContext = context;
 
-  console.log("[BankStandards] Registering DiagnosticProvider…");
+  log("Registering DiagnosticProvider…");
   diagnosticProvider = new DiagnosticProvider(context);
-  console.log("[BankStandards] DiagnosticProvider OK");
+  log("DiagnosticProvider ✓");
 
-  console.log("[BankStandards] Registering StatusBarProvider…");
+  log("Registering StatusBarProvider…");
   new StatusBarProvider(context);
-  console.log("[BankStandards] StatusBarProvider OK");
+  log("StatusBarProvider ✓");
 
-  console.log("[BankStandards] Registering @bank chat participant…");
+  log("Registering @bank chat participant…");
   registerBankAgent(context);
-  console.log("[BankStandards] @bank chat participant OK");
+  log("@bank chat participant ✓");
 
   // ─── LM Tools (available in Copilot agent mode) ──────────────────────────
-  console.log("[BankStandards] Registering LM Tools…");
+  log("Registering LM Tools…");
   try {
     context.subscriptions.push(
       vscode.lm.registerTool("bank_get_standards", new GetStandardsTool(context)),
       vscode.lm.registerTool("bank_review_test",   new ReviewTestTool(context)),
       vscode.lm.registerTool("bank_create_project", new CreateProjectTool())
     );
-    console.log("[BankStandards] LM Tools registered: bank_get_standards, bank_review_test, bank_create_project");
+    log("LM Tools ✓  bank_get_standards | bank_review_test | bank_create_project");
   } catch (err: unknown) {
-    console.error("[BankStandards] LM Tools registration FAILED:", err);
+    logError("LM Tools registration FAILED", err);
   }
 
   const SUPPORTED_LANGUAGES = [
@@ -102,13 +109,12 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(refreshCmd, newProjectCmd);
 
-  console.log("[BankStandards] ── activate() complete ─────────────────────");
+  log("── activate() complete ✓ ─────────────────────────────────────");
 
   refreshStandards().catch((err: unknown) => {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[BankStandards] refreshStandards() failed on startup: ${msg}`);
+    logError("refreshStandards() failed on startup", err);
     vscode.window.showWarningMessage(
-      "Bank Standards: Could not load Notion standards. Check your settings."
+      "Bank Standards: Could not load standards. Check your settings and see Output > Bank Standards."
     );
   });
 }

@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { renderPrompt } from "@vscode/prompt-tsx";
+import { log, logError } from "../logger";
 import { KnowledgeBlock } from "../knowledge/KnowledgeProvider";
 import { createKnowledgeProvider } from "../knowledge/KnowledgeProviderFactory";
 import { parseNamingRules, parseProjectSteps, parsePromptLibrary, blocksToMarkdown } from "../notion/parser";
@@ -24,14 +25,14 @@ interface ChatResultMetadata {
 }
 
 export function registerBankAgent(context: vscode.ExtensionContext): void {
-  console.log(`[BankAgent] Creating chat participant — id: "${PARTICIPANT_ID}"`);
+  log(`[BankAgent] Creating chat participant — id: "${PARTICIPANT_ID}"`);
 
   let participant: vscode.ChatParticipant;
   try {
     participant = vscode.chat.createChatParticipant(PARTICIPANT_ID, makeHandler(context));
-    console.log(`[BankAgent] Chat participant created OK — id: "${PARTICIPANT_ID}"`);
+    log(`[BankAgent] Chat participant created OK — id: "${PARTICIPANT_ID}"`);
   } catch (err: unknown) {
-    console.error(`[BankAgent] FAILED to create chat participant:`, err);
+    logError(`[BankAgent] FAILED to create chat participant — id: "${PARTICIPANT_ID}"`, err);
     throw err;
   }
 
@@ -73,7 +74,7 @@ export function registerBankAgent(context: vscode.ExtensionContext): void {
   };
 
   context.subscriptions.push(participant);
-  console.log("[BankAgent] Chat participant registered");
+  log("[BankAgent] Chat participant registered");
 }
 
 // ─── Request handler ────────────────────────────────────────────────────────
@@ -86,7 +87,10 @@ function makeHandler(context: vscode.ExtensionContext): vscode.ChatRequestHandle
     token: vscode.CancellationToken
   ): Promise<vscode.ChatResult> => {
     const userPrompt = request.prompt.trim();
-    console.log(`[BankAgent] User prompt: "${userPrompt}", command: "${request.command ?? "none"}"`);
+    log(`[BankAgent] ── request received ────────────────────────────────`);
+    log(`[BankAgent] command : "${request.command ?? "(none)"}"`);
+    log(`[BankAgent] prompt  : "${userPrompt.slice(0, 120)}${userPrompt.length > 120 ? "…" : ""}"`);
+    log(`[BankAgent] model   : ${request.model?.id ?? "(unknown)"}`);
 
     // 0 — Handle /specialty command
     if (request.command === "specialty") {
@@ -97,7 +101,7 @@ function makeHandler(context: vscode.ExtensionContext): vscode.ChatRequestHandle
     const knownSpecialties = listSpecialties();
     const promptSpecialty  = detectSpecialtyFromPrompt(userPrompt, knownSpecialties);
     const specialty        = promptSpecialty ?? getActiveSpecialty();
-    console.log(`[BankAgent] Specialty: "${specialty}" (${promptSpecialty ? "detected from prompt" : "from settings"})`);
+    log(`[BankAgent] specialty: "${specialty}" (${promptSpecialty ? "detected from prompt" : "from settings"})`);
 
     if (promptSpecialty) {
       stream.progress(`Usando especialidad: ${promptSpecialty}`);
@@ -105,9 +109,9 @@ function makeHandler(context: vscode.ExtensionContext): vscode.ChatRequestHandle
 
     // 2 — Pick the right page: explicit slash command takes precedence over keyword detection
     const pageKey = resolvePageKey(request.command, userPrompt);
-    console.log(`[BankAgent] Resolved page key: "${pageKey}" (via ${request.command ? "slash command" : "keyword detection"})`);
-
-    const pageId = resolvePageId(pageKey as PageType, specialty);
+    const pageId  = resolvePageId(pageKey as PageType, specialty);
+    log(`[BankAgent] pageKey  : "${pageKey}" → pageId: "${pageId ?? "NOT FOUND"}"`);
+    log(`[BankAgent] via      : ${request.command ? "slash command" : "keyword detection"}`);
 
     if (!pageId) {
       const specialtiesMap = knownSpecialties.length
@@ -123,7 +127,7 @@ function makeHandler(context: vscode.ExtensionContext): vscode.ChatRequestHandle
 
     // 3 — Load knowledge content (with cache)
     stream.progress(`Consultando base de conocimiento [${specialty}] (${pageKey})…`);
-    console.log(`[BankAgent] Loading page id: ${pageId}`);
+    log(`[BankAgent] Loading page id: ${pageId}`);
 
     let notionMarkdown: string;
     let pageTitle: string;
@@ -131,7 +135,7 @@ function makeHandler(context: vscode.ExtensionContext): vscode.ChatRequestHandle
 
     try {
       const provider = createKnowledgeProvider();
-      console.log(`[BankAgent] Using knowledge provider: ${provider.name}`);
+      log(`[BankAgent] Using knowledge provider: ${provider.name}`);
 
       const parse = (pageKey === "standards" || pageKey === "testing")
         ? (blocks: KnowledgeBlock[]) => parseNamingRules(blocks) as unknown[]
@@ -145,10 +149,11 @@ function makeHandler(context: vscode.ExtensionContext): vscode.ChatRequestHandle
 
       const rawPage = await provider.getPage(pageId);
       notionMarkdown = blocksToMarkdown(rawPage.blocks);
-      console.log(`[BankAgent] Page "${pageTitle}" loaded (fromCache: ${fromCache}), ~${notionMarkdown.length} chars`);
-    } catch (err: any) {
-      console.error(`[BankAgent] Failed to load knowledge page: ${err.message}`);
-      stream.markdown(`❌ No pude cargar la página de conocimiento: **${err.message}**`);
+      log(`[BankAgent] Page "${pageTitle}" loaded (fromCache: ${fromCache}), ~${notionMarkdown.length} chars`);
+    } catch (err: unknown) {
+      logError("[BankAgent] Failed to load knowledge page", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      stream.markdown(`❌ No pude cargar la página de conocimiento: **${msg}**`);
       return { metadata: { intent: pageKey, specialty } };
     }
 
@@ -167,7 +172,7 @@ function makeHandler(context: vscode.ExtensionContext): vscode.ChatRequestHandle
       const fileName   = editor.document.fileName.split("/").pop() ?? "archivo";
       const fileContent = editor.document.getText();
       const langId     = editor.document.languageId;
-      console.log(`[BankAgent] Reading active file: ${fileName} (${langId}), ${fileContent.length} chars`);
+      log(`[BankAgent] Reading active file: ${fileName} (${langId}), ${fileContent.length} chars`);
       stream.progress(`Leyendo archivo "${fileName}"…`);
 
       activeFileContext =
@@ -178,7 +183,7 @@ function makeHandler(context: vscode.ExtensionContext): vscode.ChatRequestHandle
     // 4b — Create project intent → generate files directly (no LLM needed)
     // Trigger on explicit /create command OR keyword-based create intent
     if (pageKey === "project" && (request.command === "create" || isCreateIntent(userPrompt))) {
-      console.log("[BankAgent] Create intent detected — generating project files");
+      log("[BankAgent] Create intent detected — generating project files");
       stream.progress("Preparando generación del proyecto…");
 
       const provider = createKnowledgeProvider();
@@ -203,7 +208,7 @@ function makeHandler(context: vscode.ExtensionContext): vscode.ChatRequestHandle
       const provider  = createKnowledgeProvider();
       const page      = await provider.getPage(pageId);
       const templates = parsePromptLibrary(page.blocks);
-      console.log(`[BankAgent] Prompt library loaded: ${templates.length} prompts`);
+      log(`[BankAgent] Prompt library loaded: ${templates.length} prompts`);
 
       await handlePromptsCommand(userPrompt, templates, stream, request.model, token, pageTitle);
       stream.button({ title: "Actualizar biblioteca de prompts", command: "bankStandards.refreshStandards" });
@@ -212,7 +217,7 @@ function makeHandler(context: vscode.ExtensionContext): vscode.ChatRequestHandle
 
     // 4 — Build token-aware prompt via prompt-tsx
     const model = request.model;
-    console.log(`[BankAgent] Using model: ${model.name} (${model.id}), max tokens: ${model.maxInputTokens}`);
+    log(`[BankAgent] Using model: ${model.name} (${model.id}), max tokens: ${model.maxInputTokens}`);
 
     const systemPrompt =
       `Eres un agente de estándares del banco integrado en VSCode. Tienes acceso a la documentación oficial ` +
@@ -245,27 +250,29 @@ function makeHandler(context: vscode.ExtensionContext): vscode.ChatRequestHandle
       model
     );
 
-    console.log(`[BankAgent] Rendered ${messages.length} messages for LLM`);
+    log(`[BankAgent] Rendered ${messages.length} messages for LLM`);
 
     // 5 — Stream response
     stream.markdown(`> 📖 Basado en **${pageTitle}** · especialidad: **${specialty}** *(${fromCache ? "caché" : "live"})*\n\n`);
 
     try {
-      console.log("[BankAgent] Sending request to LLM…");
+      log("[BankAgent] Sending request to LLM…");
       const response = await model.sendRequest(messages, {}, token);
 
       for await (const fragment of response.text) {
         stream.markdown(fragment);
       }
-      console.log("[BankAgent] LLM response complete");
-    } catch (err: any) {
+      log("[BankAgent] LLM response complete");
+    } catch (err: unknown) {
       if (err instanceof vscode.LanguageModelError) {
-        console.error(`[BankAgent] LLM error — code: ${err.code}, message: ${err.message}`);
+        logError(`[BankAgent] LLM error — code: ${err.code}`, err);
         stream.markdown(`❌ Error del modelo: ${err.message}`);
       } else {
         throw err;
       }
     }
+
+    log(`[BankAgent] ── request complete ─────────────────────────────`);
 
     // 6 — Action buttons after response
     stream.button({ title: "Actualizar estándares desde Notion", command: "bankStandards.refreshStandards" });
