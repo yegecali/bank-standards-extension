@@ -1,5 +1,6 @@
 import axios, { AxiosError } from "axios";
 import * as vscode from "vscode";
+import { log, logError } from "../logger";
 
 export interface ConfluencePageMeta {
   id: string;
@@ -62,14 +63,15 @@ export class ConfluenceClient {
   async getPageMetadata(pageId: string): Promise<ConfluencePageMeta> {
     this.validateConfig();
     const url = `${this.baseUrl}/wiki/api/v2/pages/${pageId}`;
-    console.log(`[ConfluenceClient] GET metadata: ${url}`);
+    log(`[ConfluenceClient] GET metadata → ${url}`);
 
     try {
-      const { data } = await axios.get(url, { headers: this.headers() });
+      const res = await axios.get(url, { headers: this.headers() });
+      log(`[ConfluenceClient] ← ${res.status} ${res.statusText} | title: "${res.data.title}"`);
       return {
-        id:           String(data.id),
-        title:        data.title ?? "(no title)",
-        lastModified: data.version?.createdAt ?? data.createdAt ?? new Date().toISOString(),
+        id:           String(res.data.id),
+        title:        res.data.title ?? "(no title)",
+        lastModified: res.data.version?.createdAt ?? res.data.createdAt ?? new Date().toISOString(),
       };
     } catch (err) {
       throw this.wrapError(err, url);
@@ -82,17 +84,18 @@ export class ConfluenceClient {
   async getPage(pageId: string): Promise<ConfluencePageContent> {
     this.validateConfig();
     const url = `${this.baseUrl}/wiki/api/v2/pages/${pageId}?body-format=atlas_doc_format`;
-    console.log(`[ConfluenceClient] GET page: ${url}`);
+    log(`[ConfluenceClient] GET page → ${url}`);
 
     try {
-      const { data } = await axios.get(url, { headers: this.headers() });
-      const adf: AdfDoc = data.body?.atlas_doc_format?.value
-        ? JSON.parse(data.body.atlas_doc_format.value)
+      const res = await axios.get(url, { headers: this.headers() });
+      log(`[ConfluenceClient] ← ${res.status} ${res.statusText} | title: "${res.data.title}"`);
+      const adf: AdfDoc = res.data.body?.atlas_doc_format?.value
+        ? JSON.parse(res.data.body.atlas_doc_format.value)
         : { version: 1, type: "doc", content: [] };
 
       return {
-        id:    String(data.id),
-        title: data.title ?? "(no title)",
+        id:    String(res.data.id),
+        title: res.data.title ?? "(no title)",
         adf,
       };
     } catch (err) {
@@ -106,10 +109,11 @@ export class ConfluenceClient {
   async getSpaces(): Promise<Array<{ id: string; key: string; name: string }>> {
     this.validateConfig();
     const url = `${this.baseUrl}/wiki/api/v2/spaces?limit=50&sort=name`;
-    console.log(`[ConfluenceClient] GET spaces: ${url}`);
+    log(`[ConfluenceClient] GET spaces → ${url}`);
     try {
-      const { data } = await axios.get(url, { headers: this.headers() });
-      return (data.results ?? []).map((s: Record<string, unknown>) => ({
+      const res = await axios.get(url, { headers: this.headers() });
+      log(`[ConfluenceClient] ← ${res.status} ${res.statusText} | ${(res.data.results ?? []).length} spaces`);
+      return (res.data.results ?? []).map((s: Record<string, unknown>) => ({
         id:   String(s["id"]),
         key:  String(s["key"]),
         name: String(s["name"]),
@@ -125,10 +129,11 @@ export class ConfluenceClient {
   async getPagesInSpace(spaceId: string): Promise<Array<{ id: string; title: string }>> {
     this.validateConfig();
     const url = `${this.baseUrl}/wiki/api/v2/spaces/${spaceId}/pages?limit=250&sort=title`;
-    console.log(`[ConfluenceClient] GET pages in space ${spaceId}: ${url}`);
+    log(`[ConfluenceClient] GET pages in space ${spaceId} → ${url}`);
     try {
-      const { data } = await axios.get(url, { headers: this.headers() });
-      return (data.results ?? []).map((p: Record<string, unknown>) => ({
+      const res = await axios.get(url, { headers: this.headers() });
+      log(`[ConfluenceClient] ← ${res.status} ${res.statusText} | ${(res.data.results ?? []).length} pages`);
+      return (res.data.results ?? []).map((p: Record<string, unknown>) => ({
         id:    String(p["id"]),
         title: String(p["title"]),
       }));
@@ -157,9 +162,9 @@ export class ConfluenceClient {
     const status   = axiosErr.response?.status;
     const body     = JSON.stringify(axiosErr.response?.data ?? "");
 
-    console.error(
-      `[ConfluenceClient] Request failed — URL: ${url}, ` +
-      `status: ${status ?? "network error"}, body: ${body}`
+    logError(
+      `[ConfluenceClient] ← ${status ?? "network error"} — ${url}`,
+      `body: ${body}`
     );
 
     if (status === 401) {

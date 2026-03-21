@@ -9,6 +9,8 @@ const PAGE_TYPES: Array<{ key: string; label: string; description: string }> = [
   { key: "prompts",   label: "Biblioteca de prompts",       description: "Saved prompt library" },
 ];
 
+const SETTINGS_ACTION = "Abrir Settings";
+
 /**
  * Multi-step wizard to select a Confluence space and map pages to
  * each specialty's page types. Saves result to bankStandards.specialtiesMap.
@@ -18,9 +20,35 @@ export async function setupConfluenceCommand(): Promise<void> {
   const source = config.get<string>("knowledgeSource");
 
   if (source !== "confluence") {
-    vscode.window.showWarningMessage(
-      "Bank Standards: Set bankStandards.knowledgeSource to \"confluence\" first."
+    const action = await vscode.window.showWarningMessage(
+      "Bank Standards: La fuente de conocimiento debe ser \"confluence\". ¿Deseas abrirla en Settings?",
+      SETTINGS_ACTION
     );
+    if (action === SETTINGS_ACTION) {
+      vscode.commands.executeCommand("workbench.action.openSettings", "bankStandards.knowledgeSource");
+    }
+    return;
+  }
+
+  // ── Validate Confluence credentials before proceeding ────────────────────
+  const confluenceUrl   = config.get<string>("confluenceUrl")   ?? "";
+  const confluenceEmail = config.get<string>("confluenceEmail") ?? "";
+  const confluenceToken = config.get<string>("confluenceToken") ?? "";
+
+  const missing: string[] = [];
+  if (!confluenceUrl)   missing.push("confluenceUrl");
+  if (!confluenceEmail) missing.push("confluenceEmail");
+  if (!confluenceToken) missing.push("confluenceToken");
+
+  if (missing.length > 0) {
+    log(`[SetupConfluence] Missing credentials: ${missing.join(", ")}`);
+    const action = await vscode.window.showErrorMessage(
+      `Bank Standards: Faltan credenciales de Confluence: ${missing.map((k) => `bankStandards.${k}`).join(", ")}.`,
+      SETTINGS_ACTION
+    );
+    if (action === SETTINGS_ACTION) {
+      vscode.commands.executeCommand("workbench.action.openSettings", "bankStandards.confluenceUrl");
+    }
     return;
   }
 

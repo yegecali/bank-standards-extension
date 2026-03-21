@@ -1,5 +1,6 @@
 import axios, { AxiosInstance, AxiosError } from "axios";
 import * as vscode from "vscode";
+import { log, logError } from "../logger";
 
 export interface NotionBlock {
   id: string;
@@ -35,9 +36,9 @@ export class NotionClient {
 
     this.tokenPreview = "[redacted]";
 
-    console.log(`[NotionClient] Initialized — token: ${this.tokenPreview}`);
-    console.log(`[NotionClient] Base URL: https://api.notion.com/v1`);
-    console.log(`[NotionClient] Notion-Version: 2022-06-28`);
+    log(`[NotionClient] Initialized — token: ${this.tokenPreview}`);
+    log(`[NotionClient] Base URL: https://api.notion.com/v1`);
+    log(`[NotionClient] Notion-Version: 2022-06-28`);
 
     this.http = axios.create({
       baseURL: "https://api.notion.com/v1",
@@ -51,7 +52,7 @@ export class NotionClient {
 
   async getPageMetadata(pageId: string): Promise<NotionPageMeta> {
     const url = `/pages/${pageId}`;
-    console.log(`[NotionClient] GET ${url}`);
+    log(`[NotionClient] GET → ${url}`);
 
     try {
       const response = await this.http.get(url);
@@ -60,7 +61,7 @@ export class NotionClient {
         title: extractTitle(response.data),
         lastModified: response.data.last_edited_time as string,
       };
-      console.log(`[NotionClient] Page metadata OK — title: "${meta.title}", lastModified: ${meta.lastModified}`);
+      log(`[NotionClient] ← ${response.status} OK | title: "${meta.title}", lastModified: ${meta.lastModified}`);
       return meta;
     } catch (err) {
       logAxiosError(`GET ${url}`, err);
@@ -69,13 +70,13 @@ export class NotionClient {
   }
 
   async getPage(pageId: string): Promise<NotionPage> {
-    console.log(`[NotionClient] Fetching full page — id: ${pageId}`);
+    log(`[NotionClient] Fetching full page — id: ${pageId}`);
     try {
       const [meta, blocks] = await Promise.all([
         this.getPageMetadata(pageId),
         this.fetchAllBlocks(pageId),
       ]);
-      console.log(`[NotionClient] Page loaded — "${meta.title}" | ${blocks.length} blocks`);
+      log(`[NotionClient] Page loaded — "${meta.title}" | ${blocks.length} blocks`);
       return { id: meta.id, title: meta.title, blocks };
     } catch (err) {
       logAxiosError(`getPage(${pageId})`, err);
@@ -90,7 +91,7 @@ export class NotionClient {
 
     do {
       const url = `/blocks/${blockId}/children`;
-      console.log(`[NotionClient] GET ${url} — page ${page}${cursor ? ` cursor: ${cursor}` : ""}`);
+      log(`[NotionClient] GET → ${url} (page ${page}${cursor ? `, cursor: ${cursor}` : ""})`);
       try {
         const response = await this.http.get(url, {
           params: {
@@ -100,7 +101,7 @@ export class NotionClient {
         });
         const results = response.data.results as NotionBlock[];
         blocks.push(...results);
-        console.log(`[NotionClient] Blocks page ${page} — got ${results.length} blocks (total so far: ${blocks.length})`);
+        log(`[NotionClient] ← ${response.status} OK | page ${page}: ${results.length} blocks (total: ${blocks.length})`);
         cursor = response.data.has_more ? (response.data.next_cursor as string) : undefined;
         page++;
       } catch (err) {
@@ -127,16 +128,10 @@ function logAxiosError(context: string, err: unknown): void {
     const status  = err.response?.status;
     const data    = JSON.stringify(err.response?.data ?? {});
     const url     = err.config?.url;
-    const headers = JSON.stringify({
-      "Notion-Version": err.config?.headers?.["Notion-Version"],
-      "Authorization":  err.config?.headers?.["Authorization"] ? "Bearer [redacted]" : "missing",
-    });
-    console.error(`[NotionClient] ERROR at ${context}`);
-    console.error(`  Status  : ${status}`);
-    console.error(`  URL     : ${url}`);
-    console.error(`  Headers : ${headers}`);
-    console.error(`  Response: ${data}`);
+    const authHeader = err.config?.headers?.["Authorization"] ? "Bearer [redacted]" : "missing";
+    logError(`[NotionClient] ← ${status ?? "network error"} at ${context}`,
+      `URL: ${url} | Auth: ${authHeader} | body: ${data}`);
   } else {
-    console.error(`[NotionClient] UNKNOWN ERROR at ${context}:`, err);
+    logError(`[NotionClient] UNKNOWN ERROR at ${context}`, err);
   }
 }
