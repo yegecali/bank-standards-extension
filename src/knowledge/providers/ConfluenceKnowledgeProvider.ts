@@ -5,6 +5,7 @@ import {
   KnowledgePageMeta,
   KnowledgeProvider,
 } from "../KnowledgeProvider";
+import { log } from "../../logger";
 
 export class ConfluenceKnowledgeProvider implements KnowledgeProvider {
   readonly name = "Confluence";
@@ -41,21 +42,29 @@ export class ConfluenceKnowledgeProvider implements KnowledgeProvider {
  *
  * ADF reference: https://developer.atlassian.com/cloud/jira/platform/apis/document/structure/
  */
-function adfToBlocks(nodes: AdfNode[]): KnowledgeBlock[] {
+function adfToBlocks(nodes: AdfNode[], depth = 0): KnowledgeBlock[] {
   const blocks: KnowledgeBlock[] = [];
+  const indent = "  ".repeat(depth);
 
   for (const node of nodes) {
+    log(`[adfToBlocks]${indent} node.type="${node.type}"${node.attrs ? ` attrs=${JSON.stringify(node.attrs)}` : ""}`);
+
     switch (node.type) {
       case "heading": {
         const level = (node.attrs?.level as number) ?? 1;
         const type  = level === 1 ? "heading1" : level === 2 ? "heading2" : "heading3";
-        blocks.push({ type, text: extractText(node) });
+        const text  = extractText(node);
+        log(`[adfToBlocks]${indent} → ${type}: "${text}"`);
+        blocks.push({ type, text });
         break;
       }
 
       case "paragraph": {
         const text = extractText(node);
-        if (text) blocks.push({ type: "paragraph", text });
+        if (text) {
+          log(`[adfToBlocks]${indent} → paragraph: "${text.slice(0, 60)}"`);
+          blocks.push({ type: "paragraph", text });
+        }
         break;
       }
 
@@ -78,7 +87,10 @@ function adfToBlocks(nodes: AdfNode[]): KnowledgeBlock[] {
       case "codeBlock": {
         const lang = (node.attrs?.language as string | undefined) ?? "plain";
         const text = extractText(node);
-        if (text) blocks.push({ type: "code", text, language: lang });
+        if (text) {
+          log(`[adfToBlocks]${indent} → code block (lang=${lang}): ${text.length} chars`);
+          blocks.push({ type: "code", text, language: lang });
+        }
         break;
       }
 
@@ -98,22 +110,74 @@ function adfToBlocks(nodes: AdfNode[]): KnowledgeBlock[] {
         break;
       }
 
-      // Recurse into block containers (e.g. expand, panel, layoutSection)
+      // ── expand / nestedExpand ─────────────────────────────────────────────
+      // The expand title can act as a prompt name (heading2), so we emit it
+      // before recursing into the body content.
       case "expand":
-      case "nestedExpand":
-      case "panel":
+      case "nestedExpand": {
+        const title = (node.attrs?.title as string | undefined)?.trim();
+        if (title) {
+          log(`[adfToBlocks]${indent} → expand title as heading2: "${title}"`);
+          blocks.push({ type: "heading2", text: title });
+        }
+        blocks.push(...adfToBlocks(node.content ?? [], depth + 1));
+        break;
+      }
+
+      // ── panel (Info / Note / Warning / Tip / Success boxes) ──────────────
+      // Panels can contain headings, paragraphs, and code blocks.
+      // We emit a heading3 with the panel type as context, then recurse.
+      case "panel": {
+        const panelType = (node.attrs?.panelType as string | undefined) ?? "info";
+        log(`[adfToBlocks]${indent} → panel (type=${panelType}), recursing into ${(node.content ?? []).length} children`);
+        blocks.push(...adfToBlocks(node.content ?? [], depth + 1));
+        break;
+      }
+
+      // ── bodiedExtension — Confluence block macros ────────────────────────
+      // Examples: legacy "Code" macro, "Excerpt", "Section", custom macros.
+      // If the extensionKey is "code", treat body text as a code block.
+      // Otherwise recurse into content.
+      case "bodiedExtension": {
+        const extKey  = (node.attrs?.extensionKey as string | undefined) ?? "";
+        const macroParams = (node.attrs?.parameters as Record<string, unknown> | undefined)?.macroParams as Record<string, unknown> | undefined;
+        const lang    = (macroParams?.language as Record<string, string> | undefined)?.value ?? "plain";
+        log(`[adfToBlocks]${indent} → bodiedExtension extensionKey="${extKey}"`);
+
+        if (extKey === "code") {
+          const text = extractText(node);
+          if (text) {
+            log(`[adfToBlocks]${indent}   → legacy Code macro → code block (lang=${lang}): ${text.length} chars`);
+            blocks.push({ type: "code", text, language: lang });
+          }
+        } else {
+          // Generic macro — recurse into body content
+          blocks.push(...adfToBlocks(node.content ?? [], depth + 1));
+        }
+        break;
+      }
+
+      // ── inlineExtension / extension — inline macros ───────────────────────
+      // Usually status badges, dates, etc. Extract any text as paragraph.
+      case "inlineExtension":
+      case "extension": {
+        const text = extractText(node);
+        if (text) blocks.push({ type: "paragraph", text });
+        break;
+      }
+
+      // ── plain layout and quote containers ────────────────────────────────
       case "layoutSection":
       case "layoutColumn":
       case "blockquote": {
-        blocks.push(...adfToBlocks(node.content ?? []));
+        blocks.push(...adfToBlocks(node.content ?? [], depth + 1));
         break;
       }
 
       default:
-        // Unknown node — try to extract text as a fallback paragraph
+        log(`[adfToBlocks]${indent} ⚠️ unhandled node type="${node.type}" — ${node.content ? "recursing" : "skipping"}`);
         if (node.content) {
-          const text = extractText(node);
-          if (text) blocks.push({ type: "paragraph", text });
+          blocks.push(...adfToBlocks(node.content, depth + 1));
         }
         break;
     }
