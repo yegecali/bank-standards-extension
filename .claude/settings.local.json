@@ -6,7 +6,10 @@
       "Bash(git push:*)",
       "Bash(vsce publish:*)",
       "Bash(npm run:*)",
-      "Bash(npm test:*)"
+      "Bash(npm test:*)",
+      "mcp__claude_ai_Canva__request-outline-review",
+      "mcp__claude_ai_Canva__generate-design-structured",
+      "mcp__claude_ai_Canva__create-design-from-candidate"
     ]
   }
 }
