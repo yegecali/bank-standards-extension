@@ -102,18 +102,15 @@ export class JiraClient {
 
     const projectList = projectKeys.map((k) => `"${k}"`).join(",");
     const jql = `project in (${projectList}) AND status in ("To Do","In Progress") ORDER BY priority DESC, updated DESC`;
-    const url = `${this.baseUrl}/rest/api/3/search`;
-    log(`[JiraClient] GET issues → ${url} | jql: ${jql}`);
+    const url = `${this.baseUrl}/rest/api/3/search/jql`;
+    log(`[JiraClient] POST issues → ${url} | jql: ${jql}`);
 
     try {
-      const res = await axios.get(url, {
-        headers: this.headers(),
-        params: {
-          jql,
-          maxResults,
-          fields: "summary,status,priority,created,statuscategorychangedate,subtasks,project",
-        },
-      });
+      const res = await axios.post(url, {
+        jql,
+        maxResults,
+        fields: ["summary", "status", "priority", "created", "statuscategorychangedate", "subtasks", "project"],
+      }, { headers: { ...this.headers(), "Content-Type": "application/json" } });
       log(`[JiraClient] ← ${res.status} ${res.statusText} | ${res.data.issues?.length ?? 0} issues`);
 
       return (res.data.issues ?? []).map((issue: Record<string, unknown>) => {
