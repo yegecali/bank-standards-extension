@@ -1,12 +1,11 @@
 import * as vscode from "vscode";
 import { renderPrompt } from "@vscode/prompt-tsx";
 import { log, logError } from "../logger";
-import { KnowledgeBlock } from "../knowledge/KnowledgeProvider";
 import { createKnowledgeProvider } from "../knowledge/KnowledgeProviderFactory";
-import { parseNamingRules, parseProjectSteps, parsePromptLibrary, blocksToMarkdown } from "../notion/parser";
+import { parsePromptLibrary, blocksToMarkdown } from "../notion/parser";
 import { handlePromptsCommand } from "./promptLibraryHandler";
-import { resolveWithCache } from "../notion/cache";
 import { isCreateIntent, createProjectFromNotion } from "./projectCreator";
+import { getStagedDiff } from "./gitHelper";
 import { BankPrompt } from "./BankPrompt";
 import {
   PageType,
@@ -17,7 +16,7 @@ import {
   detectSpecialtyFromPrompt,
 } from "./specialtyResolver";
 
-const PARTICIPANT_ID = "bankStandards.agent";
+const PARTICIPANT_ID = "companyStandards.agent";
 
 interface ChatResultMetadata {
   intent: string;
@@ -119,7 +118,7 @@ function makeHandler(context: vscode.ExtensionContext): vscode.ChatRequestHandle
         : "";
       stream.markdown(
         `No tengo una página configurada para **"${pageKey}"** (especialidad: **${specialty}**).\n\n` +
-        `Configúrala en \`bankStandards.specialtiesMap.${specialty}.${pageKey}\` en tus settings.\n\n` +
+        `Configúrala en \`companyStandards.specialtiesMap.${specialty}.${pageKey}\` en tus settings.\n\n` +
         (specialtiesMap ? `> ${specialtiesMap}` : "")
       );
       return { metadata: { intent: pageKey, specialty } };
@@ -131,25 +130,15 @@ function makeHandler(context: vscode.ExtensionContext): vscode.ChatRequestHandle
 
     let notionMarkdown: string;
     let pageTitle: string;
-    let fromCache: boolean;
 
     try {
       const provider = createKnowledgeProvider();
       log(`[BankAgent] Using knowledge provider: ${provider.name}`);
 
-      const parse = (pageKey === "standards" || pageKey === "testing")
-        ? (blocks: KnowledgeBlock[]) => parseNamingRules(blocks) as unknown[]
-        : pageKey === "prompts"
-          ? (blocks: KnowledgeBlock[]) => parsePromptLibrary(blocks) as unknown[]
-          : (blocks: KnowledgeBlock[]) => parseProjectSteps(blocks) as unknown[];
-
-      const result = await resolveWithCache(context, pageId, provider, parse, "BankAgent");
-      pageTitle  = result.pageTitle;
-      fromCache  = result.fromCache;
-
       const rawPage = await provider.getPage(pageId);
+      pageTitle      = rawPage.title;
       notionMarkdown = blocksToMarkdown(rawPage.blocks);
-      log(`[BankAgent] Page "${pageTitle}" loaded (fromCache: ${fromCache}), ~${notionMarkdown.length} chars`);
+      log(`[BankAgent] Page "${pageTitle}" loaded, ~${notionMarkdown.length} chars`);
     } catch (err: unknown) {
       logError("[BankAgent] Failed to load knowledge page", err);
       const msg = err instanceof Error ? err.message : String(err);
@@ -157,10 +146,10 @@ function makeHandler(context: vscode.ExtensionContext): vscode.ChatRequestHandle
       return { metadata: { intent: pageKey, specialty } };
     }
 
-    // 4a — If testing intent, read the active editor file
-    // Trigger on explicit /review command OR keyword-based review intent
+    // 4a — If testing/generate-test intent, read the active editor file
+    // Trigger on explicit /review or /generate-test command OR keyword-based review intent
     let activeFileContext = "";
-    if (pageKey === "testing" && (request.command === "review" || isReviewIntent(userPrompt))) {
+    if (pageKey === "testing" && (request.command === "review" || request.command === "generate-test" || isReviewIntent(userPrompt))) {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
         stream.markdown(
@@ -178,6 +167,43 @@ function makeHandler(context: vscode.ExtensionContext): vscode.ChatRequestHandle
       activeFileContext =
         `\n\n---\n## Archivo a revisar: \`${fileName}\`\n` +
         `\`\`\`${langId}\n${fileContent}\n\`\`\``;
+    }
+
+    // 4a2 — /docs: read active file to generate documentation
+    if (request.command === "docs") {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        stream.markdown(
+          "⚠️ No hay ningún archivo abierto en el editor.\n\n" +
+          "Abre el archivo al que quieres agregar documentación y vuelve a ejecutar el comando."
+        );
+        return { metadata: { intent: pageKey, specialty } };
+      }
+      const fileName    = editor.document.fileName.split("/").pop() ?? "archivo";
+      const fileContent = editor.document.getText();
+      const langId      = editor.document.languageId;
+      log(`[BankAgent] /docs — Reading active file: ${fileName} (${langId}), ${fileContent.length} chars`);
+      stream.progress(`Generando documentación para "${fileName}"…`);
+      activeFileContext =
+        `\n\n---\n## Archivo a documentar: \`${fileName}\`\n` +
+        `\`\`\`${langId}\n${fileContent}\n\`\`\``;
+    }
+
+    // 4a3 — /commit: get staged git diff
+    if (request.command === "commit") {
+      const diff = getStagedDiff();
+      if (!diff) {
+        stream.markdown(
+          "⚠️ No hay cambios staged.\n\n" +
+          "Añade archivos con `git add` antes de ejecutar este comando."
+        );
+        return { metadata: { intent: pageKey, specialty } };
+      }
+      log(`[BankAgent] /commit — Staged diff: ${diff.length} chars`);
+      stream.progress("Analizando cambios staged para sugerir mensaje de commit…");
+      activeFileContext =
+        `\n\n---\n## Cambios staged (git diff --cached)\n` +
+        `\`\`\`diff\n${diff}\n\`\`\``;
     }
 
     // 4b — Create project intent → generate files directly (no LLM needed)
@@ -211,7 +237,7 @@ function makeHandler(context: vscode.ExtensionContext): vscode.ChatRequestHandle
       log(`[BankAgent] Prompt library loaded: ${templates.length} prompts`);
 
       await handlePromptsCommand(userPrompt, templates, stream, request.model, token, pageTitle);
-      stream.button({ title: "Actualizar biblioteca de prompts", command: "bankStandards.refreshStandards" });
+      stream.button({ title: "Actualizar biblioteca de prompts", command: "companyStandards.refreshStandards" });
       return { metadata: { intent: pageKey, specialty } };
     }
 
@@ -220,7 +246,7 @@ function makeHandler(context: vscode.ExtensionContext): vscode.ChatRequestHandle
     log(`[BankAgent] Using model: ${model.name} (${model.id}), max tokens: ${model.maxInputTokens}`);
 
     const systemPrompt =
-      `Eres un agente de estándares del banco integrado en VSCode. Tienes acceso a la documentación oficial ` +
+      `Eres un agente de estándares de la compañía integrado en VSCode. Tienes acceso a la documentación oficial ` +
       `del banco almacenada en Notion. Responde SOLO basándote en el contenido de la documentación proporcionada. ` +
       `IMPORTANTE: Este agente SÍ puede crear proyectos y generar archivos en disco automáticamente. ` +
       `Cuando el usuario pida crear, generar o inicializar un proyecto, dile que el agente lo generará ` +
@@ -228,11 +254,31 @@ function makeHandler(context: vscode.ExtensionContext): vscode.ChatRequestHandle
       `Nunca digas que no puedes crear proyectos. ` +
       `Usa formato Markdown en tus respuestas. Responde en el mismo idioma que el usuario.`;
 
-    const reviewInstruction = activeFileContext
-      ? `\nAnaliza el archivo adjunto línea por línea contra los estándares del banco. ` +
-        `Lista cada violación encontrada con: número de línea, problema y corrección sugerida. ` +
-        `Al final muestra un resumen con ✅ si cumple o ❌ si no cumple cada regla del checklist.`
-      : "";
+    let reviewInstruction = "";
+    if (activeFileContext) {
+      if (request.command === "generate-test") {
+        reviewInstruction =
+          `\nGenera tests unitarios completos para el archivo adjunto siguiendo los estándares de testing de la documentación. ` +
+          `Incluye: imports necesarios, clase de test, métodos de test con patrón AAA (Arrange/Act/Assert), ` +
+          `y al menos un caso por método público. Usa el mismo lenguaje que el archivo fuente.`;
+      } else if (request.command === "docs") {
+        reviewInstruction =
+          `\nAgrega comentarios JSDoc/JavaDoc al archivo adjunto siguiendo los estándares de la documentación. ` +
+          `Documenta únicamente métodos y clases públicos. No modifiques la lógica del código. ` +
+          `Devuelve el archivo completo con los comentarios añadidos.`;
+      } else if (request.command === "commit") {
+        reviewInstruction =
+          `\nA partir de los cambios staged adjuntos y los estándares de la documentación, ` +
+          `genera un mensaje de commit en formato Conventional Commits (type(scope): description). ` +
+          `Incluye: tipo (feat/fix/refactor/docs/test/chore), scope opcional, descripción corta en el idioma del usuario, ` +
+          `y un cuerpo explicando el "por qué" si los cambios son complejos.`;
+      } else {
+        reviewInstruction =
+          `\nAnaliza el archivo adjunto línea por línea contra los estándares de la compañía. ` +
+          `Lista cada violación encontrada con: número de línea, problema y corrección sugerida. ` +
+          `Al final muestra un resumen con ✅ si cumple o ❌ si no cumple cada regla del checklist.`;
+      }
+    }
 
     const { messages } = await renderPrompt(
       BankPrompt,
@@ -241,7 +287,6 @@ function makeHandler(context: vscode.ExtensionContext): vscode.ChatRequestHandle
         reviewInstruction,
         notionContent: notionMarkdown,
         pageTitle,
-        fromCache,
         activeFileContext,
         userPrompt,
         history: chatContext.history,
@@ -253,7 +298,7 @@ function makeHandler(context: vscode.ExtensionContext): vscode.ChatRequestHandle
     log(`[BankAgent] Rendered ${messages.length} messages for LLM`);
 
     // 5 — Stream response
-    stream.markdown(`> 📖 Basado en **${pageTitle}** · especialidad: **${specialty}** *(${fromCache ? "caché" : "live"})*\n\n`);
+    stream.markdown(`> 📖 Basado en **${pageTitle}** · especialidad: **${specialty}**\n\n`);
 
     try {
       log("[BankAgent] Sending request to LLM…");
@@ -275,7 +320,7 @@ function makeHandler(context: vscode.ExtensionContext): vscode.ChatRequestHandle
     log(`[BankAgent] ── request complete ─────────────────────────────`);
 
     // 6 — Action buttons after response
-    stream.button({ title: "Actualizar estándares desde Notion", command: "bankStandards.refreshStandards" });
+    stream.button({ title: "Actualizar estándares desde Notion", command: "companyStandards.refreshStandards" });
 
     return { metadata: { intent: pageKey, specialty } };
   };
@@ -302,10 +347,10 @@ async function handleSpecialtyCommand(
     if (knownSpecialties.length === 0) {
       stream.markdown(
         `No hay especialidades configuradas aún.\n\n` +
-        `Añade entradas en \`bankStandards.specialtiesMap\` en tus settings.\n\n` +
+        `Añade entradas en \`companyStandards.specialtiesMap\` en tus settings.\n\n` +
         `**Ejemplo:**\n` +
         `\`\`\`json\n` +
-        `"bankStandards.specialtiesMap": {\n` +
+        `"companyStandards.specialtiesMap": {\n` +
         `  "backend":  { "standards": "<id>", "testing": "<id>", "project": "<id>", "prompts": "<id>" },\n` +
         `  "frontend": { "standards": "<id>", "testing": "<id>" },\n` +
         `  "qa":       { "testing": "<id>", "prompts": "<id>" }\n` +
@@ -347,10 +392,13 @@ async function handleSpecialtyCommand(
 }
 
 function resolvePageKey(command: string | undefined, prompt: string): string {
-  if (command === "standards") return "standards";
-  if (command === "review")    return "testing";
-  if (command === "create")    return "project";
-  if (command === "prompts")   return "prompts";
+  if (command === "standards")      return "standards";
+  if (command === "review")         return "testing";
+  if (command === "generate-test")  return "testing";
+  if (command === "create")         return "project";
+  if (command === "prompts")        return "prompts";
+  if (command === "docs")           return "standards";
+  if (command === "commit")         return "standards";
   return detectIntent(prompt);
 }
 

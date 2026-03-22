@@ -40,7 +40,7 @@ export class GetStandardsTool implements vscode.LanguageModelTool<GetStandardsIn
     if (!pageId) {
       return result(
         "No standards page configured. " +
-        "Add 'standards' to bankStandards.specialtiesMap.<specialty> (or legacy pagesMap) in settings."
+        "Add 'standards' to companyStandards.specialtiesMap.<specialty> (or legacy pagesMap) in settings."
       );
     }
 

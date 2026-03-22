@@ -23,15 +23,15 @@ VSCode extension that connects to your bank's knowledge base (Notion or Confluen
 
 ## Configuration
 
-Open your VS Code settings (`Ctrl+,`) and search for `bankStandards`, or add the following to your `settings.json`.
+Open your VS Code settings (`Ctrl+,`) and search for `companyStandards`, or add the following to your `settings.json`.
 
 ### Option A — Notion
 
 ```json
 {
-  "bankStandards.knowledgeSource": "notion",
-  "bankStandards.notionToken": "secret_xxxxxxxxxxxxxxxxxxxx",
-  "bankStandards.pagesMap": {
+  "companyStandards.knowledgeSource": "notion",
+  "companyStandards.notionToken": "secret_xxxxxxxxxxxxxxxxxxxx",
+  "companyStandards.pagesMap": {
     "standards": "<notion-page-id>",
     "project":   "<notion-page-id>",
     "testing":   "<notion-page-id>",
@@ -68,11 +68,11 @@ Copy the last segment (32-char UUID, with or without hyphens).
 
 ```json
 {
-  "bankStandards.knowledgeSource": "confluence",
-  "bankStandards.confluenceUrl":   "https://yourbank.atlassian.net",
-  "bankStandards.confluenceEmail": "you@yourbank.com",
-  "bankStandards.confluenceToken": "<atlassian-api-token>",
-  "bankStandards.pagesMap": {
+  "companyStandards.knowledgeSource": "confluence",
+  "companyStandards.confluenceUrl":   "https://yourbank.atlassian.net",
+  "companyStandards.confluenceEmail": "you@yourbank.com",
+  "companyStandards.confluenceToken": "<atlassian-api-token>",
+  "companyStandards.pagesMap": {
     "standards": "123456789",
     "project":   "987654321",
     "testing":   "111222333",
@@ -104,10 +104,10 @@ If your teams have separate documentation pages per specialty, use `specialtiesM
 
 ```json
 {
-  "bankStandards.knowledgeSource": "notion",
-  "bankStandards.notionToken": "secret_xxxxxxxxxxxxxxxxxxxx",
-  "bankStandards.specialty": "backend",
-  "bankStandards.specialtiesMap": {
+  "companyStandards.knowledgeSource": "notion",
+  "companyStandards.notionToken": "secret_xxxxxxxxxxxxxxxxxxxx",
+  "companyStandards.specialty": "backend",
+  "companyStandards.specialtiesMap": {
     "backend": {
       "standards": "<notion-page-id>",
       "testing":   "<notion-page-id>",
@@ -137,7 +137,7 @@ Each specialty only needs to define the page types it uses — missing keys fall
 @bank /specialty qa           ← switch to qa
 ```
 
-Or update `bankStandards.specialty` in settings directly.
+Or update `companyStandards.specialty` in settings directly.
 
 ---
 
@@ -196,7 +196,7 @@ Three tools Copilot can invoke automatically — no `@bank` required:
 
 | Tool | Trigger | Reference |
 |---|---|---|
-| `bank_get_standards` | Questions about naming rules | `#bankStandards` |
+| `bank_get_standards` | Questions about naming rules | `#companyStandards` |
 | `bank_review_test` | Test file review requests | `#bankReview` |
 | `bank_create_project` | Project creation requests | `#bankCreate` |
 

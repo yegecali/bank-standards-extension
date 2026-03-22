@@ -3,7 +3,7 @@ import * as vscode from "vscode";
 let channel: vscode.OutputChannel | undefined;
 
 export function initLogger(): vscode.OutputChannel {
-  channel = vscode.window.createOutputChannel("Bank Standards");
+  channel = vscode.window.createOutputChannel("Company Coding Standard");
   return channel;
 }
 

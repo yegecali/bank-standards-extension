@@ -25,7 +25,7 @@ export function activate(context: vscode.ExtensionContext) {
   log(`Storage path   : ${context.globalStorageUri?.fsPath ?? "n/a"}`);
 
   // Log current settings (no sensitive values)
-  const cfg = vscode.workspace.getConfiguration("bankStandards");
+  const cfg = vscode.workspace.getConfiguration("companyStandards");
   log(`knowledgeSource: ${cfg.get("knowledgeSource") ?? "(not set)"}`);
   log(`notionToken    : ${cfg.get<string>("notionToken") ? "✓ configured" : "✗ NOT SET"}`);
   log(`confluenceUrl  : ${cfg.get("confluenceUrl") || "(not set)"}`);
@@ -56,9 +56,9 @@ export function activate(context: vscode.ExtensionContext) {
   log("Registering LM Tools…");
   try {
     context.subscriptions.push(
-      vscode.lm.registerTool("bank_get_standards", new GetStandardsTool(context)),
-      vscode.lm.registerTool("bank_review_test",   new ReviewTestTool(context)),
-      vscode.lm.registerTool("bank_create_project", new CreateProjectTool())
+      vscode.lm.registerTool("company_get_standards", new GetStandardsTool(context)),
+      vscode.lm.registerTool("company_review_test",   new ReviewTestTool(context)),
+      vscode.lm.registerTool("company_create_project", new CreateProjectTool())
     );
     log("LM Tools ✓  bank_get_standards | bank_review_test | bank_create_project");
   } catch (err: unknown) {
@@ -80,7 +80,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(codeActionProvider);
 
   const refreshCmd = vscode.commands.registerCommand(
-    "bankStandards.refreshStandards",
+    "companyStandards.refreshStandards",
     async () => {
       resetKnowledgeProvider();
       await clearCache(context);
@@ -91,25 +91,25 @@ export function activate(context: vscode.ExtensionContext) {
   // Reset provider singleton when knowledge source settings change
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration("bankStandards.knowledgeSource") ||
-          e.affectsConfiguration("bankStandards.notionToken") ||
-          e.affectsConfiguration("bankStandards.confluenceUrl") ||
-          e.affectsConfiguration("bankStandards.confluenceEmail") ||
-          e.affectsConfiguration("bankStandards.confluenceToken")) {
+      if (e.affectsConfiguration("companyStandards.knowledgeSource") ||
+          e.affectsConfiguration("companyStandards.notionToken") ||
+          e.affectsConfiguration("companyStandards.confluenceUrl") ||
+          e.affectsConfiguration("companyStandards.confluenceEmail") ||
+          e.affectsConfiguration("companyStandards.confluenceToken")) {
         resetKnowledgeProvider();
       }
     })
   );
 
   const newProjectCmd = vscode.commands.registerCommand(
-    "bankStandards.newProject",
+    "companyStandards.newProject",
     async () => {
       await showProjectGuide(context);
     }
   );
 
   const setupConfluenceCmd = vscode.commands.registerCommand(
-    "bankStandards.setupConfluence",
+    "companyStandards.setupConfluence",
     setupConfluenceCommand
   );
 
@@ -120,19 +120,19 @@ export function activate(context: vscode.ExtensionContext) {
   refreshStandards().catch((err: unknown) => {
     logError("refreshStandards() failed on startup", err);
     vscode.window.showWarningMessage(
-      "Bank Standards: Could not load standards. Check your settings and see Output > Bank Standards."
+      "Company Coding Standard: Could not load standards. Check your settings and see Output > Bank Standards."
     );
   });
 }
 
 async function refreshStandards() {
-  const config = vscode.workspace.getConfiguration("bankStandards");
+  const config = vscode.workspace.getConfiguration("companyStandards");
   const pagesMap = config.get<Record<string, string>>("pagesMap") ?? {};
   const standardsPageId = pagesMap["standards"];
 
   if (!standardsPageId) {
     vscode.window.showWarningMessage(
-      'Bank Standards: No standards page ID configured. Add "standards" to bankStandards.pagesMap.'
+      'Company Coding Standard: No standards page ID configured. Add "standards" to companyStandards.pagesMap.'
     );
     return;
   }
@@ -151,22 +151,22 @@ async function refreshStandards() {
 
     const origin = fromCache ? "cache (page unchanged)" : "Notion (page updated)";
     vscode.window.showInformationMessage(
-      `Bank Standards: ${rules.length} rules loaded from "${pageTitle}" — ${origin}`
+      `Company Coding Standard: ${rules.length} rules loaded from "${pageTitle}" — ${origin}`
     );
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    vscode.window.showErrorMessage(`Bank Standards: ${msg}`);
+    vscode.window.showErrorMessage(`Company Coding Standard: ${msg}`);
   }
 }
 
 async function showProjectGuide(context: vscode.ExtensionContext) {
-  const config = vscode.workspace.getConfiguration("bankStandards");
+  const config = vscode.workspace.getConfiguration("companyStandards");
   const pagesMap = config.get<Record<string, string>>("pagesMap") ?? {};
   const projectPageId = pagesMap["project"];
 
   if (!projectPageId) {
     vscode.window.showWarningMessage(
-      'Bank Standards: No project guide page ID configured. Add "project" to bankStandards.pagesMap.'
+      'Company Coding Standard: No project guide page ID configured. Add "project" to companyStandards.pagesMap.'
     );
     return;
   }
@@ -191,8 +191,16 @@ async function showProjectGuide(context: vscode.ExtensionContext) {
     panel.webview.html = buildProjectGuideHtml(pageTitle, steps, fromCache);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    vscode.window.showErrorMessage(`Bank Standards: ${msg}`);
+    vscode.window.showErrorMessage(`Company Coding Standard: ${msg}`);
   }
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 function buildProjectGuideHtml(
@@ -204,15 +212,15 @@ function buildProjectGuideHtml(
     .map(
       (s) => `
       <li>
-        <strong>${s.title}</strong>
-        ${s.description !== s.title ? `<p>${s.description}</p>` : ""}
+        <strong>${escapeHtml(s.title)}</strong>
+        ${s.description !== s.title ? `<p>${escapeHtml(s.description)}</p>` : ""}
       </li>`
     )
     .join("");
 
   const badge = fromCache
     ? `<span class="badge cache">cached</span>`
-    : `<span class="badge live">live from Notion</span>`;
+    : `<span class="badge live">live from knowledge base</span>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -230,7 +238,7 @@ function buildProjectGuideHtml(
   </style>
 </head>
 <body>
-  <h1>${title} ${badge}</h1>
+  <h1>${escapeHtml(title)} ${badge}</h1>
   <ol>${stepsHtml}</ol>
 </body>
 </html>`;

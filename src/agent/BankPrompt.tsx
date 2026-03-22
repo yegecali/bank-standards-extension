@@ -17,7 +17,6 @@ export interface BankPromptProps extends BasePromptElementProps {
   reviewInstruction: string;
   notionContent: string;
   pageTitle: string;
-  fromCache: boolean;
   activeFileContext: string;
   userPrompt: string;
   history: readonly (vscode.ChatRequestTurn | vscode.ChatResponseTurn)[];
@@ -40,19 +39,13 @@ export class BankPrompt extends PromptElement<BankPromptProps> {
       reviewInstruction,
       notionContent,
       pageTitle,
-      fromCache,
       activeFileContext,
       userPrompt,
       history,
     } = this.props;
 
-    const cacheLabel = fromCache
-      ? "desde caché (página sin cambios)"
-      : "actualizado recientemente";
-
     const docSection =
-      `## Documentación: "${pageTitle}"\n` +
-      `> Fuente: Notion — ${cacheLabel}\n\n` +
+      `## Documentación: "${pageTitle}"\n\n` +
       notionContent;
 
     return (

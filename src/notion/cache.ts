@@ -10,7 +10,7 @@ export interface CacheEntry<T> {
   data: T;
 }
 
-const CACHE_KEY_PREFIX = "bankStandards.cache.";
+const CACHE_KEY_PREFIX = "companyStandards.cache.";
 
 /**
  * Resolves data for a knowledge page using a two-step strategy:

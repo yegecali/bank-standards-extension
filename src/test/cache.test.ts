@@ -74,7 +74,7 @@ describe("resolveWithCache", () => {
       await resolveWithCache(ctx, "PAGE_1", client, parse, "test");
 
       expect(ctx.globalState.update).toHaveBeenCalledWith(
-        "bankStandards.cache.PAGE_1",
+        "companyStandards.cache.PAGE_1",
         expect.objectContaining({
           pageId: "PAGE_1",
           lastModified: "2024-01-15T10:00:00.000Z",
@@ -102,7 +102,7 @@ describe("resolveWithCache", () => {
         lastModified: DATE,
         data,
       };
-      return mockContext({ "bankStandards.cache.PAGE_1": entry });
+      return mockContext({ "companyStandards.cache.PAGE_1": entry });
     }
 
     it("returns fromCache=true when date matches", async () => {
@@ -154,7 +154,7 @@ describe("resolveWithCache", () => {
         lastModified: OLD_DATE,
         data: ["old-rule"],
       };
-      return mockContext({ "bankStandards.cache.PAGE_1": entry });
+      return mockContext({ "companyStandards.cache.PAGE_1": entry });
     }
 
     it("returns fromCache=false when dates differ", async () => {
@@ -182,7 +182,7 @@ describe("resolveWithCache", () => {
       await resolveWithCache(ctx, "PAGE_1", client, parse, "test");
 
       expect(ctx.globalState.update).toHaveBeenCalledWith(
-        "bankStandards.cache.PAGE_1",
+        "companyStandards.cache.PAGE_1",
         expect.objectContaining({ lastModified: NEW_DATE })
       );
     });
@@ -206,7 +206,7 @@ describe("resolveWithCache", () => {
         lastModified: "2024-01-15T10:00:00.000Z",
         data: [],
       };
-      const ctx = mockContext({ "bankStandards.cache.PAGE_1": entry });
+      const ctx = mockContext({ "companyStandards.cache.PAGE_1": entry });
       const client = mockClient({
         metaLastModified: "2024-01-15T10:00:00.000Z",
         pageTitle: "Current Title",
@@ -233,22 +233,22 @@ describe("resolveWithCache", () => {
 // ─────────────────────────────────────────────
 
 describe("clearCache", () => {
-  it("removes all bankStandards.cache.* keys", async () => {
+  it("removes all companyStandards.cache.* keys", async () => {
     const ctx = mockContext({
-      "bankStandards.cache.PAGE_1": { data: [] },
-      "bankStandards.cache.PAGE_2": { data: [] },
+      "companyStandards.cache.PAGE_1": { data: [] },
+      "companyStandards.cache.PAGE_2": { data: [] },
     });
 
     await clearCache(ctx);
 
-    expect(ctx.globalState.update).toHaveBeenCalledWith("bankStandards.cache.PAGE_1", undefined);
-    expect(ctx.globalState.update).toHaveBeenCalledWith("bankStandards.cache.PAGE_2", undefined);
+    expect(ctx.globalState.update).toHaveBeenCalledWith("companyStandards.cache.PAGE_1", undefined);
+    expect(ctx.globalState.update).toHaveBeenCalledWith("companyStandards.cache.PAGE_2", undefined);
     expect(ctx.globalState.update).toHaveBeenCalledTimes(2);
   });
 
   it("does not touch unrelated globalState keys", async () => {
     const ctx = mockContext({
-      "bankStandards.cache.PAGE_1": { data: [] },
+      "companyStandards.cache.PAGE_1": { data: [] },
       "someOtherExtension.setting": true,
     });
 

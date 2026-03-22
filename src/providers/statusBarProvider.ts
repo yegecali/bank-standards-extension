@@ -26,13 +26,13 @@ export class StatusBarProvider {
 
     const violations = vscode.languages
       .getDiagnostics(editor.document.uri)
-      .filter((d) => d.source === "Bank Standards");
+      .filter((d) => d.source === "Company Coding Standard");
 
     if (violations.length === 0) {
       this.item.text = "$(check) Bank Standards";
       this.item.backgroundColor = undefined;
     } else {
-      this.item.text = `$(warning) Bank: ${violations.length} violation${violations.length === 1 ? "" : "s"}`;
+      this.item.text = `$(warning) Company: ${violations.length} violation${violations.length === 1 ? "" : "s"}`;
       this.item.backgroundColor = new vscode.ThemeColor("statusBarItem.warningBackground");
     }
 

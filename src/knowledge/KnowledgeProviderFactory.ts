@@ -15,7 +15,7 @@ let cachedSource: string | null = null;
  * Call resetKnowledgeProvider() to force recreation (e.g. after settings change).
  */
 export function createKnowledgeProvider(): KnowledgeProvider {
-  const config = vscode.workspace.getConfiguration("bankStandards");
+  const config = vscode.workspace.getConfiguration("companyStandards");
   const source = (config.get<string>("knowledgeSource") ?? "notion") as KnowledgeSourceType;
 
   if (cachedProvider && cachedSource === source) {
