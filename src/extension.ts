@@ -153,8 +153,9 @@ async function refreshStandards() {
     vscode.window.showInformationMessage(
       `Bank Standards: ${rules.length} rules loaded from "${pageTitle}" — ${origin}`
     );
-  } catch (err: any) {
-    vscode.window.showErrorMessage(`Bank Standards: ${err.message}`);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    vscode.window.showErrorMessage(`Bank Standards: ${msg}`);
   }
 }
 
@@ -188,8 +189,9 @@ async function showProjectGuide(context: vscode.ExtensionContext) {
     );
 
     panel.webview.html = buildProjectGuideHtml(pageTitle, steps, fromCache);
-  } catch (err: any) {
-    vscode.window.showErrorMessage(`Bank Standards: ${err.message}`);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    vscode.window.showErrorMessage(`Bank Standards: ${msg}`);
   }
 }
 

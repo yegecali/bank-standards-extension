@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import { KnowledgeBlock } from "../knowledge/KnowledgeProvider";
+import { log } from "../logger";
 
 export interface CreatedProject {
   folder: string;
@@ -45,11 +46,11 @@ export async function createProjectCore(
   onProgress?.(`Generando estructura del proyecto "${projectName}"…`);
 
   const codeBlocks = extractCodeBlocks(blocks);
-  console.log(`[ProjectCreator] Extracted ${Object.keys(codeBlocks).length} code block groups`);
+  log(`[ProjectCreator] Extracted ${Object.keys(codeBlocks).length} code block groups`);
 
   const rootPath = path.join(workspaceRoot, projectName);
   const files = await writeProjectFiles(rootPath, projectName, codeBlocks);
-  console.log(`[ProjectCreator] Created ${files.length} files in ${rootPath}`);
+  log(`[ProjectCreator] Created ${files.length} files in ${rootPath}`);
 
   return { folder: rootPath, files };
 }
@@ -99,7 +100,7 @@ async function writeProjectFiles(
     await vscode.workspace.fs.createDirectory(dir);
     await vscode.workspace.fs.writeFile(uri, Buffer.from(content, "utf8"));
     created.push(relPath);
-    console.log(`[ProjectCreator] Created: ${relPath}`);
+    log(`[ProjectCreator] Created: ${relPath}`);
   };
 
   const pomContent   = codeBlocks["xml"]?.[0]        ?? buildDefaultPom(projectName);

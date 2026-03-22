@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { KnowledgeProvider } from "./KnowledgeProvider";
 import { NotionKnowledgeProvider } from "./providers/NotionKnowledgeProvider";
 import { ConfluenceKnowledgeProvider } from "./providers/ConfluenceKnowledgeProvider";
+import { log } from "../logger";
 
 export type KnowledgeSourceType = "notion" | "confluence";
 
@@ -21,7 +22,7 @@ export function createKnowledgeProvider(): KnowledgeProvider {
     return cachedProvider;
   }
 
-  console.log(`[KnowledgeProviderFactory] Creating provider for source: "${source}"`);
+  log(`[KnowledgeProviderFactory] Creating provider for source: "${source}"`);
 
   switch (source) {
     case "notion":
@@ -31,7 +32,7 @@ export function createKnowledgeProvider(): KnowledgeProvider {
       cachedProvider = new ConfluenceKnowledgeProvider();
       break;
     default:
-      console.warn(`[KnowledgeProviderFactory] Unknown source "${source}", falling back to Notion`);
+      log(`[KnowledgeProviderFactory] Unknown source "${source}", falling back to Notion`);
       cachedProvider = new NotionKnowledgeProvider();
   }
 
@@ -46,5 +47,5 @@ export function createKnowledgeProvider(): KnowledgeProvider {
 export function resetKnowledgeProvider(): void {
   cachedProvider = null;
   cachedSource = null;
-  console.log("[KnowledgeProviderFactory] Provider cache cleared");
+  log("[KnowledgeProviderFactory] Provider cache cleared");
 }
