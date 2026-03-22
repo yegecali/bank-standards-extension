@@ -1,6 +1,6 @@
 # Architecture
 
-Technical reference for contributors and maintainers of the Bank Standards Extension.
+Technical reference for contributors and maintainers of the Company Coding Standard extension.
 
 ---
 
@@ -8,36 +8,42 @@ Technical reference for contributors and maintainers of the Bank Standards Exten
 
 ```
 src/
-├── extension.ts                      # Entry point + LM tool registration
+├── extension.ts                  Entry point — registers all providers and commands
+├── logger.ts                     Output Channel "Company Coding Standard" (log/logError/showChannel)
+│
 ├── agent/
-│   ├── bankAgent.ts                  # @bank chat participant + slash commands + follow-ups
-│   ├── BankPrompt.tsx                # Token-aware prompt via @vscode/prompt-tsx
-│   ├── projectCreator.ts             # createProjectCore() + createProjectFromNotion()
-│   ├── promptLibraryHandler.ts       # /prompts command — list and apply saved prompts
-│   ├── specialtyResolver.ts          # getActiveSpecialty, resolvePageId, detectSpecialtyFromPrompt
-│   └── tools/
-│       ├── GetStandardsTool.ts       # LM Tool: fetches bank naming standards
-│       ├── ReviewTestTool.ts         # LM Tool: reads active file + test standards
-│       └── CreateProjectTool.ts      # LM Tool: scaffolds Maven/Quarkus project
+│   ├── bankAgent.ts              @bank chat participant — routes all slash commands
+│   ├── specialtyResolver.ts      Specialty resolution: specialtiesMap → pagesMap fallback
+│   ├── promptLibraryHandler.ts   /prompts — catalog listing and prompt execution
+│   ├── jiraHandler.ts            /jira — issue listing, detail, subtasks, create
+│   ├── newFeatureHandler.ts      /new-feature — 8-step guided implementation workflow
+│   ├── gitHelper.ts              getStagedDiff() — reads git diff --cached
+│   └── BankPrompt.tsx            Token-priority prompt builder for context pruning
+│
+├── commands/
+│   └── setupConfluenceCommand.ts Guided wizard: pick Confluence space → map pages
+│
 ├── knowledge/
-│   ├── KnowledgeProvider.ts          # Provider-agnostic interface (KnowledgeBlock[])
-│   ├── KnowledgeProviderFactory.ts   # Reads knowledgeSource setting, returns correct provider
+│   ├── KnowledgeProvider.ts      Interfaces: KnowledgeBlock, KnowledgePage, KnowledgeProvider
+│   ├── KnowledgeProviderFactory.ts Singleton factory with cache + resetKnowledgeProvider()
 │   └── providers/
-│       ├── NotionKnowledgeProvider.ts     # Notion REST API v1 → KnowledgeBlock[]
-│       └── ConfluenceKnowledgeProvider.ts # Confluence REST API v2 (ADF) → KnowledgeBlock[]
+│       ├── NotionKnowledgeProvider.ts    Notion → KnowledgeBlock[]
+│       └── ConfluenceKnowledgeProvider.ts ADF → KnowledgeBlock[] with full macro support
+│
 ├── notion/
-│   ├── client.ts                     # Low-level Notion HTTP client
-│   ├── parser.ts                     # NamingRule / ProjectStep / PromptTemplate parsers + blocksToMarkdown
-│   └── cache.ts                      # globalState cache with metadata invalidation
+│   ├── client.ts                 Notion REST API v1 client (axios + Output Channel logs)
+│   └── parser.ts                 parseNamingRules / parseProjectSteps / parsePromptLibrary / blocksToMarkdown
+│
 ├── confluence/
-│   └── client.ts                     # Low-level Confluence HTTP client (ADF format)
+│   └── client.ts                 Confluence REST API v2 client — getPage, getSpaces, getPagesInSpace
+│
 ├── providers/
-│   ├── diagnosticProvider.ts         # Inline warnings on save/open
-│   ├── codeActionProvider.ts         # Quick Fix actions
-│   └── statusBarProvider.ts          # Violation counter in status bar
+│   ├── diagnosticProvider.ts     Inline diagnostics with 300ms debounce
+│   ├── codeActionProvider.ts     Lightbulb quick-fixes for naming violations
+│   └── statusBarProvider.ts      Status bar item showing active knowledge source
+│
 └── standards/
-    ├── rules.ts                       # Convention matching + name conversion
-    └── validator.ts                   # Document scanning → Violation[]
+    └── validator.ts              Regex-based naming convention checker (EXTRACTOR_PATTERNS)
 ```
 
 ---
@@ -45,102 +51,192 @@ src/
 ## Knowledge provider flow
 
 ```
-settings.json
-  companyStandards.knowledgeSource = "notion" | "confluence"
-         │
-         ▼
+vscode settings
+  knowledgeSource = "notion" | "confluence"
+        │
+        ▼
 KnowledgeProviderFactory.createKnowledgeProvider()
-         │
-         ├─ "notion"     → NotionKnowledgeProvider   → NotionClient (REST API v1)
-         └─ "confluence" → ConfluenceKnowledgeProvider → ConfluenceClient (REST API v2, ADF)
-                                    │
-                                    ▼
-                           KnowledgeBlock[]   (provider-agnostic)
-                                    │
-                    ┌───────────────┼──────────────────┬──────────────────┐
-                    ▼               ▼                  ▼                  ▼
-            parseNamingRules  parseProjectSteps  parsePromptLibrary  blocksToMarkdown
-                                                                           │
-                                                              ┌────────────┴────────────┐
-                                                              ▼                         ▼
-                                                        @bank agent              LM Tools
-                                                      (chat participant)   (agent mode / #refs)
+  cached by source string — reset on credential change
+        │
+        ├─ notion      → NotionKnowledgeProvider  → NotionClient (REST v1)
+        └─ confluence  → ConfluenceKnowledgeProvider → ConfluenceClient (REST v2)
+                                │
+                                ▼
+                        KnowledgePage { id, title, blocks: KnowledgeBlock[] }
+                                │
+                                ▼
+                        parser.ts
+                          parseNamingRules()    → NamingRule[]
+                          parseProjectSteps()   → ProjectStep[]
+                          parsePromptLibrary()  → PromptTemplate[]
+                          blocksToMarkdown()    → string
 ```
 
 ---
 
 ## Specialty resolution
 
-Page IDs are resolved in this order for every request:
+```
+resolvePageId(pageType, specialty?)
+  │
+  ├─ 1. specialtiesMap[activeSpecialty][pageType]   ← preferred
+  ├─ 2. pagesMap[pageType]                          ← legacy fallback
+  └─ 3. undefined → command shows "not configured" message
+```
+
+Active specialty is stored in `companyStandards.specialty` (global settings).
+`detectSpecialtyFromPrompt()` auto-detects specialty keywords in the user's message.
+
+---
+
+## @bank agent — command routing
 
 ```
-1. specialtiesMap[activeSpecialty][pageType]   ← per-specialty config (preferred)
-2. pagesMap[pageType]                           ← legacy flat config (fallback)
+bankAgent.ts → handleRequest(request, context, stream, token)
+  │
+  ├─ /standards    → load "standards" page → blocksToMarkdown → stream
+  ├─ /review       → load "standards" page + active file → LLM review
+  ├─ /create       → load "project" page → blocksToMarkdown → stream
+  ├─ /generate-test→ load "testing" page + active file → LLM unit test generation
+  ├─ /docs         → load "standards" page + active file → LLM JSDoc/JavaDoc generation
+  ├─ /commit       → getStagedDiff() + "standards" page → LLM Conventional Commit message
+  ├─ /prompts      → load "prompts" page → parsePromptLibrary → handlePromptsCommand
+  ├─ /specialty    → handleSpecialtyCommand (list or switch)
+  ├─ /jira         → jiraHandler (list / detail / subtasks / create)
+  ├─ /new-feature  → newFeatureHandler (8-step guided workflow)
+  └─ (free text)   → load "standards" page → LLM general answer
 ```
 
-`specialtyResolver.ts` exports:
-- `getActiveSpecialty()` — reads `companyStandards.specialty` (default: `"backend"`)
-- `setActiveSpecialty(name)` — persists to global settings
-- `resolvePageId(pageType, specialty?)` — applies resolution order above
-- `listSpecialties()` — returns keys of `specialtiesMap`
-- `detectSpecialtyFromPrompt(prompt, known)` — matches specialty names mentioned in chat
+---
+
+## /jira command
+
+```
+jiraHandler.ts
+  │
+  ├─ /jira               → JiraClient.getIssues(projects) → QuickPick → showIssueDetail()
+  ├─ /jira PROJ-123      → JiraClient.getIssue(key) → showIssueDetail()
+  ├─ /jira subtasks KEY  → JiraClient.getSubtasks(key) → markdown table
+  └─ /jira create KEY    → InputBox(summary) → JiraClient.createSubtask() → confirm
+
+JiraClient
+  baseUrl  : companyStandards.jiraUrl
+  auth     : Basic (jiraEmail + jiraToken)
+  projects : companyStandards.jiraProject (string | string[])
+
+Time metrics: "45m" | "3h 20m" | "3d 4h" | "2w 1d" | "3 months"
+```
+
+---
+
+## /new-feature workflow
+
+```
+newFeatureHandler.ts — 8 steps
+  1. Validate Jira config
+  2. JiraClient.getIssues(project) → QuickPick story
+  3. Display selected issue detail
+  4. LLM → stream implementation plan (components, endpoints, tests, complexity)
+  5. Modal confirm "Proceed with implementation?"
+  6. Load standards page (active specialty)
+  7. LLM → stream step-by-step guidance with company conventions applied
+  8. Suggest commit: feat(projectKey): summary-slug — ISSUE-KEY
+```
+
+---
+
+## /generate-test, /docs, /commit
+
+```
+/generate-test
+  active editor file (content + language)
+  + testing standards page (specialty-resolved)
+  → LLM: "generate unit tests with AAA pattern, one per public method"
+
+/docs
+  active editor file (content + language)
+  + standards page (specialty-resolved)
+  → LLM: "add JSDoc/JavaDoc to public methods only, don't modify logic"
+
+/commit
+  getStagedDiff() → git diff --cached from workspace root
+  + standards page
+  → LLM: "generate Conventional Commits message (type(scope): description)"
+```
+
+---
+
+## Prompt library parsing
+
+```
+parsePromptLibrary(blocks: KnowledgeBlock[]): PromptTemplate[]
+
+Each prompt section:
+  heading2  → slug = text.toLowerCase().replace("Prompts: ","").replace(/\s+/g,"-")
+  paragraph → description (first one) | template (subsequent ones, accumulated)
+  code      → template (takes priority over paragraph accumulation)
+  bullet    → appended to template as "- item"
+
+Slug cleaning: strips "Prompts: " / "Prompt - " prefix, removes special chars
+```
+
+---
+
+## Model resolution
+
+```
+resolveModel(model)
+  │
+  ├─ model.id !== "auto"  → use as-is
+  └─ model.id === "auto"  → vscode.lm.selectChatModels() fallback chain:
+       1. { vendor: "copilot", family: "gpt-4o" }
+       2. { vendor: "copilot", family: "gpt-4" }
+       3. { vendor: "copilot", family: "claude-sonnet" }
+       4. {} — any model
+```
+
+The "auto" model is Copilot's routing placeholder and does NOT support `sendRequest()` from extensions directly.
+
+---
+
+## Confluence ADF → KnowledgeBlock conversion
+
+The `adfToBlocks()` function handles all Confluence node types:
+
+| ADF node | KnowledgeBlock |
+|---|---|
+| `heading` level 1/2/3 | `heading1` / `heading2` / `heading3` |
+| `paragraph` | `paragraph` |
+| `bulletList` items | `bullet` |
+| `orderedList` items | `numbered` |
+| `codeBlock` | `code` (with language) |
+| `rule` | `divider` |
+| `table` + `tableRow` | `table` + `table_row` |
+| `expand` / `nestedExpand` | emits title as `heading2`, recurses content |
+| `panel` (Info/Note/Warning/Tip) | recurses content |
+| `bodiedExtension` key="code" | `code` (legacy Code macro) |
+| `bodiedExtension` other | recurses content |
+| `layoutSection` / `layoutColumn` / `blockquote` | recurses content |
+
+---
+
+## LM Tools vs @bank
+
+| | LM Tools | @bank |
+|---|---|---|
+| Invocation | Automatic by Copilot in agent mode | Explicit `@bank /command` |
+| Context | Copilot reads `#companyStandards` etc. | Active editor + settings |
+| Tools | `bank_get_standards`, `bank_review_test`, `bank_create_project` | All slash commands |
+| Best for | Inline suggestions while coding | Explicit queries and generation |
 
 ---
 
 ## Cache behavior
 
-All knowledge pages are cached in VS Code's `globalState`:
+`KnowledgeProviderFactory` caches the provider instance by source string.
+Cache is invalidated when:
+- `companyStandards.knowledgeSource` changes
+- `companyStandards.notionToken` changes
+- `companyStandards.confluenceToken` changes
 
-- On each load only **page metadata** (last modified date) is fetched — lightweight
-- If unchanged → cached data returned instantly
-- If updated → full content re-fetched and cache refreshed
-- Works identically for Notion and Confluence
-- Force reload: `Bank: Refresh Standards from Notion` command
-
----
-
-## LM Tools vs @bank agent
-
-|  | LM Tools | @bank Agent |
-|---|---|---|
-| Activation | Automatic in agent mode | Explicit `@bank` or auto-disambiguation |
-| Interaction | Single tool call, structured result | Conversational, multi-turn |
-| Confirmation | `bank_create_project` shows dialog | Inline in chat |
-| Token management | Returns raw context for LLM | `@vscode/prompt-tsx` with priority pruning |
-| Best for | Quick lookups in any Copilot chat | Deep Q&A, project guides, prompt library |
-
----
-
-## Prompt-tsx priority levels
-
-| Priority | Content |
-|---|---|
-| 100 | System prompt |
-| 90 | User query |
-| 80 | Active file context |
-| 70 | Knowledge page content (Notion/Confluence) |
-| 0 | Chat history |
-
-Lower-priority content is pruned first when the model's token limit is approached.
-
----
-
-## Publishing
-
-```bash
-npm install -g @vscode/vsce
-vsce login <publisher-id>
-npm run compile
-vsce package                 # → bank-standards-extension-x.x.x.vsix
-vsce publish                 # publish to Marketplace
-vsce publish patch           # bump patch version and publish
-```
-
-### Checklist before publishing
-
-- [ ] `publisher`, `repository`, `icon`, `license` in `package.json`
-- [ ] `icon` points to a `.png` file (128×128 px minimum — SVG not accepted)
-- [ ] `npm run compile` — no errors
-- [ ] `npm test` — all tests pass
-- [ ] Tested locally via `F5` (Extension Development Host)
-- [ ] `.vscodeignore` excludes `src/`, `node_modules/`, test files, `.env`
+Run `Bank: Refresh Standards from Notion` to force cache invalidation manually.
