@@ -13,9 +13,9 @@ export function matchesConvention(
     case "PascalCase":
       return /^[A-Z][a-zA-Z0-9]*$/.test(name);
     case "snake_case":
-      return /^[a-z][a-z0-9_]*$/.test(name);
+      return /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/.test(name);
     case "UPPER_SNAKE":
-      return /^[A-Z][A-Z0-9_]*$/.test(name);
+      return /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*$/.test(name);
     case "kebab-case":
       return /^[a-z][a-z0-9-]*$/.test(name);
   }

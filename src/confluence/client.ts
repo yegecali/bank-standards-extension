@@ -36,7 +36,7 @@ export interface AdfNode {
 
 export class ConfluenceClient {
   private get config() {
-    return vscode.workspace.getConfiguration("bankStandards");
+    return vscode.workspace.getConfiguration("companyStandards");
   }
 
   private get baseUrl(): string {
@@ -89,9 +89,15 @@ export class ConfluenceClient {
     try {
       const res = await axios.get(url, { headers: this.headers() });
       log(`[ConfluenceClient] ← ${res.status} ${res.statusText} | title: "${res.data.title}"`);
-      const adf: AdfDoc = res.data.body?.atlas_doc_format?.value
-        ? JSON.parse(res.data.body.atlas_doc_format.value)
-        : { version: 1, type: "doc", content: [] };
+      let adf: AdfDoc = { version: 1, type: "doc", content: [] };
+      const rawAdf = res.data.body?.atlas_doc_format?.value;
+      if (rawAdf) {
+        try {
+          adf = JSON.parse(rawAdf);
+        } catch {
+          log("[ConfluenceClient] ADF JSON parse failed — returning empty doc");
+        }
+      }
 
       return {
         id:    String(res.data.id),
@@ -152,15 +158,20 @@ export class ConfluenceClient {
     if (!url || !email || !token) {
       throw new Error(
         "Confluence not fully configured. " +
-        "Set bankStandards.confluenceUrl, confluenceEmail, and confluenceToken in settings."
+        "Set companyStandards.confluenceUrl, confluenceEmail, and confluenceToken in settings."
       );
     }
   }
 
   private wrapError(err: unknown, url: string): Error {
-    const axiosErr = err as AxiosError;
-    const status   = axiosErr.response?.status;
-    const body     = JSON.stringify(axiosErr.response?.data ?? "");
+    if (!(err instanceof AxiosError)) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logError(`[ConfluenceClient] Non-HTTP error — ${url}`, msg);
+      return new Error(`Confluence: ${msg}`);
+    }
+
+    const status = err.response?.status;
+    const body   = JSON.stringify(err.response?.data ?? "");
 
     logError(
       `[ConfluenceClient] ← ${status ?? "network error"} — ${url}`,
@@ -176,6 +187,6 @@ export class ConfluenceClient {
     if (status === 404) {
       return new Error(`Confluence: Page not found (id: ${url.split("/").pop()?.split("?")[0]}). Check pagesMap.`);
     }
-    return new Error(`Confluence: ${axiosErr.message}`);
+    return new Error(`Confluence: ${err.message}`);
   }
 }

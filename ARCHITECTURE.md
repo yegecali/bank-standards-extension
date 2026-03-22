@@ -46,7 +46,7 @@ src/
 
 ```
 settings.json
-  bankStandards.knowledgeSource = "notion" | "confluence"
+  companyStandards.knowledgeSource = "notion" | "confluence"
          │
          ▼
 KnowledgeProviderFactory.createKnowledgeProvider()
@@ -79,7 +79,7 @@ Page IDs are resolved in this order for every request:
 ```
 
 `specialtyResolver.ts` exports:
-- `getActiveSpecialty()` — reads `bankStandards.specialty` (default: `"backend"`)
+- `getActiveSpecialty()` — reads `companyStandards.specialty` (default: `"backend"`)
 - `setActiveSpecialty(name)` — persists to global settings
 - `resolvePageId(pageType, specialty?)` — applies resolution order above
 - `listSpecialties()` — returns keys of `specialtiesMap`

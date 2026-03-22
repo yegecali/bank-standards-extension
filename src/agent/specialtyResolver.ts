@@ -12,7 +12,7 @@ export interface SpecialtiesMap {
  * Defaults to "backend" if not configured.
  */
 export function getActiveSpecialty(): string {
-  const config = vscode.workspace.getConfiguration("bankStandards");
+  const config = vscode.workspace.getConfiguration("companyStandards");
   return config.get<string>("specialty") ?? "backend";
 }
 
@@ -20,7 +20,7 @@ export function getActiveSpecialty(): string {
  * Sets the active specialty in workspace settings.
  */
 export async function setActiveSpecialty(specialty: string): Promise<void> {
-  const config = vscode.workspace.getConfiguration("bankStandards");
+  const config = vscode.workspace.getConfiguration("companyStandards");
   await config.update("specialty", specialty, vscode.ConfigurationTarget.Global);
 }
 
@@ -28,7 +28,7 @@ export async function setActiveSpecialty(specialty: string): Promise<void> {
  * Returns the full specialtiesMap from settings.
  */
 export function getSpecialtiesMap(): SpecialtiesMap {
-  const config = vscode.workspace.getConfiguration("bankStandards");
+  const config = vscode.workspace.getConfiguration("companyStandards");
   return config.get<SpecialtiesMap>("specialtiesMap") ?? {};
 }
 
@@ -56,7 +56,7 @@ export function resolvePageId(pageType: PageType, specialty?: string): string | 
   }
 
   // Fallback: legacy pagesMap
-  const config   = vscode.workspace.getConfiguration("bankStandards");
+  const config   = vscode.workspace.getConfiguration("companyStandards");
   const pagesMap = config.get<Record<string, string>>("pagesMap") ?? {};
   return pagesMap[pageType] || undefined;
 }

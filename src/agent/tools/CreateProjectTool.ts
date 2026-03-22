@@ -71,7 +71,7 @@ export class CreateProjectTool implements vscode.LanguageModelTool<CreateProject
     if (!pageId) {
       return result(
         "No project template page configured. " +
-        "Add 'project' to bankStandards.specialtiesMap.<specialty> (or legacy pagesMap) in settings."
+        "Add 'project' to companyStandards.specialtiesMap.<specialty> (or legacy pagesMap) in settings."
       );
     }
 
@@ -110,8 +110,9 @@ export class CreateProjectTool implements vscode.LanguageModelTool<CreateProject
         files.map((f) => `- \`${f}\``).join("\n") +
         `\n\nRun \`mvn quarkus:dev\` inside the project folder to start the server.`
       );
-    } catch (err: any) {
-      return result(`Error creating project: ${err.message}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return result(`Error creating project: ${msg}`);
     }
   }
 }

@@ -13,19 +13,19 @@ const SETTINGS_ACTION = "Abrir Settings";
 
 /**
  * Multi-step wizard to select a Confluence space and map pages to
- * each specialty's page types. Saves result to bankStandards.specialtiesMap.
+ * each specialty's page types. Saves result to companyStandards.specialtiesMap.
  */
 export async function setupConfluenceCommand(): Promise<void> {
-  const config = vscode.workspace.getConfiguration("bankStandards");
+  const config = vscode.workspace.getConfiguration("companyStandards");
   const source = config.get<string>("knowledgeSource");
 
   if (source !== "confluence") {
     const action = await vscode.window.showWarningMessage(
-      "Bank Standards: La fuente de conocimiento debe ser \"confluence\". ¿Deseas abrirla en Settings?",
+      "Company Coding Standard: La fuente de conocimiento debe ser \"confluence\". ¿Deseas abrirla en Settings?",
       SETTINGS_ACTION
     );
     if (action === SETTINGS_ACTION) {
-      vscode.commands.executeCommand("workbench.action.openSettings", "bankStandards.knowledgeSource");
+      vscode.commands.executeCommand("workbench.action.openSettings", "companyStandards.knowledgeSource");
     }
     return;
   }
@@ -43,11 +43,11 @@ export async function setupConfluenceCommand(): Promise<void> {
   if (missing.length > 0) {
     log(`[SetupConfluence] Missing credentials: ${missing.join(", ")}`);
     const action = await vscode.window.showErrorMessage(
-      `Bank Standards: Faltan credenciales de Confluence: ${missing.map((k) => `bankStandards.${k}`).join(", ")}.`,
+      `Company Coding Standard: Faltan credenciales de Confluence: ${missing.map((k) => `companyStandards.${k}`).join(", ")}.`,
       SETTINGS_ACTION
     );
     if (action === SETTINGS_ACTION) {
-      vscode.commands.executeCommand("workbench.action.openSettings", "bankStandards.confluenceUrl");
+      vscode.commands.executeCommand("workbench.action.openSettings", "companyStandards.confluenceUrl");
     }
     return;
   }
@@ -56,7 +56,7 @@ export async function setupConfluenceCommand(): Promise<void> {
 
   // ── Step 1: select space ──────────────────────────────────────────────────
   await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: "Bank Standards: Loading Confluence spaces…" },
+    { location: vscode.ProgressLocation.Notification, title: "Company Coding Standard: Loading Confluence spaces…" },
     async () => { /* just shows the spinner while we await below */ }
   );
 
@@ -68,13 +68,13 @@ export async function setupConfluenceCommand(): Promise<void> {
   } catch (err: unknown) {
     logError("[SetupConfluence] Failed to fetch spaces", err);
     vscode.window.showErrorMessage(
-      `Bank Standards: Could not load Confluence spaces — ${err instanceof Error ? err.message : String(err)}`
+      `Company Coding Standard: Could not load Confluence spaces — ${err instanceof Error ? err.message : String(err)}`
     );
     return;
   }
 
   if (spaces.length === 0) {
-    vscode.window.showWarningMessage("Bank Standards: No Confluence spaces found for this account.");
+    vscode.window.showWarningMessage("Company Coding Standard: No Confluence spaces found for this account.");
     return;
   }
 
@@ -106,13 +106,13 @@ export async function setupConfluenceCommand(): Promise<void> {
   } catch (err: unknown) {
     logError("[SetupConfluence] Failed to fetch pages", err);
     vscode.window.showErrorMessage(
-      `Bank Standards: Could not load pages — ${err instanceof Error ? err.message : String(err)}`
+      `Company Coding Standard: Could not load pages — ${err instanceof Error ? err.message : String(err)}`
     );
     return;
   }
 
   if (pages.length === 0) {
-    vscode.window.showWarningMessage(`Bank Standards: No pages found in space "${pickedSpace.space.name}".`);
+    vscode.window.showWarningMessage(`Company Coding Standard: No pages found in space "${pickedSpace.space.name}".`);
     return;
   }
 
@@ -155,7 +155,7 @@ export async function setupConfluenceCommand(): Promise<void> {
   }
 
   if (!anyPicked) {
-    vscode.window.showInformationMessage("Bank Standards: No se mapeó ninguna página.");
+    vscode.window.showInformationMessage("Company Coding Standard: No se mapeó ninguna página.");
     return;
   }
 
@@ -165,6 +165,6 @@ export async function setupConfluenceCommand(): Promise<void> {
   log(`[SetupConfluence] specialtiesMap updated for specialty "${specialty}"`);
 
   vscode.window.showInformationMessage(
-    `Bank Standards: Confluence configurado para especialidad "${specialty}" en espacio "${pickedSpace.space.name}".`
+    `Company Coding Standard: Confluence configurado para especialidad "${specialty}" en espacio "${pickedSpace.space.name}".`
   );
 }

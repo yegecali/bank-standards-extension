@@ -25,12 +25,12 @@ export class NotionClient {
   private tokenPreview: string;
 
   constructor() {
-    const config = vscode.workspace.getConfiguration("bankStandards");
+    const config = vscode.workspace.getConfiguration("companyStandards");
     const token = config.get<string>("notionToken") ?? "";
 
     if (!token) {
       throw new Error(
-        "Notion not configured. Set bankStandards.notionToken in settings."
+        "Notion not configured. Set companyStandards.notionToken in settings."
       );
     }
 
@@ -117,8 +117,9 @@ export class NotionClient {
 function extractTitle(page: Record<string, unknown>): string {
   const props = (page.properties ?? {}) as Record<string, unknown>;
   for (const key of ["title", "Name", "Title"]) {
-    const prop = props[key] as any;
-    if (prop?.title?.[0]?.plain_text) return prop.title[0].plain_text as string;
+    const prop = props[key] as Record<string, unknown> | undefined;
+    const titleArr = prop?.["title"] as Array<{ plain_text: string }> | undefined;
+    if (titleArr?.[0]?.plain_text) return titleArr[0].plain_text;
   }
   return page.id as string;
 }

@@ -19,7 +19,7 @@ export class DiagnosticProvider {
 
   constructor(context: vscode.ExtensionContext) {
     this.collection =
-      vscode.languages.createDiagnosticCollection("bankStandards");
+      vscode.languages.createDiagnosticCollection("companyStandards");
     context.subscriptions.push(this.collection);
 
     // Validate on open
@@ -62,11 +62,11 @@ export class DiagnosticProvider {
     const diagnostics = violations.map((v) => {
       const diag = new vscode.Diagnostic(
         v.range,
-        `[Bank Standard] "${v.name}" should be ${v.rule.convention}. ` +
+        `[Company Standard] "${v.name}" should be ${v.rule.convention}. ` +
           `Suggestion: "${v.suggestion}" (Rule: ${v.rule.description})`,
         vscode.DiagnosticSeverity.Warning,
       );
-      diag.source = "Bank Standards";
+      diag.source = "Company Coding Standard";
       diag.code = v.rule.convention;
       return diag;
     });

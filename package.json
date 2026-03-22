@@ -1,6 +1,6 @@
 {
-  "name": "bank-standards-extension",
-  "displayName": "Bank Standards Extension",
+  "name": "company-coding-standard",
+  "displayName": "Company Coding Standard",
   "description": "VSCode extension for bank coding standards via Notion or Confluence — naming conventions, test reviews, project scaffolding, and AI agent.",
   "version": "0.0.13",
   "publisher": "yemicanchari",
@@ -36,12 +36,12 @@
   "contributes": {
     "chatParticipants": [
       {
-        "id": "bankStandards.agent",
-        "name": "bank",
-        "fullName": "Bank Standards Agent",
+        "id": "companyStandards.agent",
+        "name": "company",
+        "fullName": "Company Coding Standard Agent",
         "description": "Consulta estándares, crea proyectos y revisa tests según las guías del banco",
         "isSticky": true,
-        "icon": "images/bank-agent.svg",
+        "icon": "images/company-agent.svg",
         "commands": [
           {
             "name": "standards",
@@ -62,11 +62,23 @@
           {
             "name": "specialty",
             "description": "Cambia la especialidad activa (frontend, backend, qa) o lista las disponibles"
+          },
+          {
+            "name": "generate-test",
+            "description": "Genera tests unitarios para el archivo activo siguiendo los estándares de testing del banco"
+          },
+          {
+            "name": "docs",
+            "description": "Genera JSDoc/JavaDoc para el archivo activo siguiendo los estándares de documentación del banco"
+          },
+          {
+            "name": "commit",
+            "description": "Sugiere un mensaje de commit basado en los cambios staged y las convenciones del banco"
           }
         ],
         "disambiguation": [
           {
-            "category": "bank_coding_standards",
+            "category": "company_coding_standards",
             "description": "Questions about bank coding standards, naming conventions, test patterns (Triple AAA), or Maven/Quarkus project scaffolding",
             "examples": [
               "¿cómo debo nombrar los métodos en Java?",
@@ -81,11 +93,11 @@
     ],
     "languageModelTools": [
       {
-        "name": "bank_get_standards",
-        "displayName": "Get Bank Coding Standards",
+        "name": "company_get_standards",
+        "displayName": "Get Company Coding Standards",
         "modelDescription": "Retrieves the bank's official coding standards and naming conventions (camelCase, PascalCase, UPPER_SNAKE, etc.). Use this when the user asks about naming conventions, coding rules, how to name methods, variables, constants, classes, or any coding standards question.",
         "canBeReferencedInPrompt": true,
-        "toolReferenceName": "bankStandards",
+        "toolReferenceName": "companyStandards",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -101,7 +113,7 @@
         }
       },
       {
-        "name": "bank_review_test",
+        "name": "company_review_test",
         "displayName": "Review Test File",
         "modelDescription": "Reads the currently open test file in the editor and fetches the bank's test standards (Triple AAA pattern). Use this when the user asks to review, analyze, validate, or check a test file against bank standards.",
         "canBeReferencedInPrompt": true,
@@ -117,8 +129,8 @@
         }
       },
       {
-        "name": "bank_create_project",
-        "displayName": "Create Bank Project",
+        "name": "company_create_project",
+        "displayName": "Create Company Project",
         "modelDescription": "Creates a new Maven + Java 21 + Quarkus project using the bank's official project template. Use this when the user asks to create, generate, scaffold, build, or initialize a new project or service.",
         "canBeReferencedInPrompt": true,
         "toolReferenceName": "bankCreate",
@@ -139,22 +151,22 @@
     ],
     "commands": [
       {
-        "command": "bankStandards.newProject",
-        "title": "Bank: New Project Guide"
+        "command": "companyStandards.newProject",
+        "title": "Company: New Project Guide"
       },
       {
-        "command": "bankStandards.refreshStandards",
-        "title": "Bank: Refresh Standards from Notion"
+        "command": "companyStandards.refreshStandards",
+        "title": "Company: Refresh Standards"
       },
       {
-        "command": "bankStandards.setupConfluence",
-        "title": "Bank: Setup Confluence Space"
+        "command": "companyStandards.setupConfluence",
+        "title": "Company: Setup Confluence Space"
       }
     ],
     "configuration": {
-      "title": "Bank Standards",
+      "title": "Company Coding Standard",
       "properties": {
-        "bankStandards.knowledgeSource": {
+        "companyStandards.knowledgeSource": {
           "type": "string",
           "enum": [
             "notion",
@@ -163,32 +175,32 @@
           "default": "notion",
           "description": "Knowledge source to use: 'notion' or 'confluence'"
         },
-        "bankStandards.notionToken": {
+        "companyStandards.notionToken": {
           "type": "string",
           "default": "",
           "description": "Notion Integration Token (from notion.so/my-integrations)"
         },
-        "bankStandards.confluenceUrl": {
+        "companyStandards.confluenceUrl": {
           "type": "string",
           "default": "",
           "description": "Confluence Cloud base URL (e.g. https://yourbank.atlassian.net)"
         },
-        "bankStandards.confluenceEmail": {
+        "companyStandards.confluenceEmail": {
           "type": "string",
           "default": "",
           "description": "Atlassian account email used for API authentication"
         },
-        "bankStandards.confluenceToken": {
+        "companyStandards.confluenceToken": {
           "type": "string",
           "default": "",
           "description": "Confluence API token (from id.atlassian.com/manage-profile/security/api-tokens)"
         },
-        "bankStandards.specialty": {
+        "companyStandards.specialty": {
           "type": "string",
           "default": "backend",
           "description": "Active specialty: backend, frontend, qa, or any custom value defined in specialtiesMap"
         },
-        "bankStandards.specialtiesMap": {
+        "companyStandards.specialtiesMap": {
           "type": "object",
           "default": {},
           "description": "Map of specialties to their page IDs. Each specialty can define: standards, testing, project, prompts. Example: { \"backend\": { \"standards\": \"<id>\", \"testing\": \"<id>\" }, \"frontend\": { \"standards\": \"<id>\" } }",
@@ -214,7 +226,7 @@
             }
           }
         },
-        "bankStandards.pagesMap": {
+        "companyStandards.pagesMap": {
           "type": "object",
           "default": {
             "standards": "",

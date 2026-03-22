@@ -9,7 +9,7 @@ export class BankStandardsCodeActionProvider implements vscode.CodeActionProvide
     context: vscode.CodeActionContext
   ): vscode.CodeAction[] {
     return context.diagnostics
-      .filter((d) => d.source === "Bank Standards")
+      .filter((d) => d.source === "Company Coding Standard")
       .flatMap((diagnostic) => this.buildActions(document, diagnostic));
   }
 
@@ -25,7 +25,7 @@ export class BankStandardsCodeActionProvider implements vscode.CodeActionProvide
 
     // --- Action 1: Fix in current file ---
     const fixInFile = new vscode.CodeAction(
-      `Rename to "${suggestion}" (Bank Standard)`,
+      `Rename to "${suggestion}" (Company Standard)`,
       vscode.CodeActionKind.QuickFix
     );
     fixInFile.diagnostics = [diagnostic];
