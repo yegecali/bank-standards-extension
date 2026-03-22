@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { log, logError } from "../logger";
-import { JiraClient } from "../jira/client";
+import { JiraClient, getConfiguredProjects } from "../jira/client";
 import { createKnowledgeProvider } from "../knowledge/KnowledgeProviderFactory";
 import { blocksToMarkdown } from "../notion/parser";
 import { resolvePageId, getActiveSpecialty, PageType } from "./specialtyResolver";
@@ -27,10 +27,9 @@ export async function handleNewFeatureCommand(
   const config = vscode.workspace.getConfiguration("companyStandards");
 
   // ── PASO 1: Validate Jira configuration ──────────────────────────────────
-  const jiraUrl     = config.get<string>("jiraUrl") ?? "";
-  const jiraEmail   = config.get<string>("jiraEmail") ?? "";
-  const jiraToken   = config.get<string>("jiraToken") ?? "";
-  const jiraProject = config.get<string>("jiraProject") ?? "";
+  const jiraUrl   = config.get<string>("jiraUrl") ?? "";
+  const jiraEmail = config.get<string>("jiraEmail") ?? "";
+  const jiraToken = config.get<string>("jiraToken") ?? "";
 
   if (!jiraUrl || !jiraEmail || !jiraToken) {
     stream.markdown(
@@ -40,15 +39,15 @@ export async function handleNewFeatureCommand(
       `| \`companyStandards.jiraUrl\` | URL base de Jira (ej. \`https://tuempresa.atlassian.net\`) |\n` +
       `| \`companyStandards.jiraEmail\` | Email de tu cuenta Atlassian |\n` +
       `| \`companyStandards.jiraToken\` | API token de Jira (desde [id.atlassian.com](https://id.atlassian.com/manage-profile/security/api-tokens)) |\n` +
-      `| \`companyStandards.jiraProject\` | Clave del proyecto por defecto (ej. \`BANK\`, \`DEV\`) |\n\n` +
+      `| \`companyStandards.jiraProject\` | Proyecto(s): \`"BANK"\` o \`["BANK","DEV"]\` |\n\n` +
       `Una vez configurado, vuelve a ejecutar \`@company /new-feature\`.`
     );
     return;
   }
 
   // Determine project key: from arg (e.g. "PROJ-123" or "PROJ"), or from settings
-  let projectKey = jiraProject;
   const argTrimmed = userArg.trim().toUpperCase();
+  let projectKey = "";
 
   // If user passed an issue key like "PROJ-123", extract project part
   const issueKeyMatch = argTrimmed.match(/^([A-Z][A-Z0-9]+)-\d+$/);
@@ -57,6 +56,10 @@ export async function handleNewFeatureCommand(
   } else if (argTrimmed.match(/^[A-Z][A-Z0-9]+$/)) {
     // User passed just a project key
     projectKey = argTrimmed;
+  } else {
+    // Fall back to configured projects (use first one for /new-feature)
+    const configuredProjects = getConfiguredProjects();
+    projectKey = configuredProjects[0] ?? "";
   }
 
   if (!projectKey) {

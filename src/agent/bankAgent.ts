@@ -5,6 +5,7 @@ import { createKnowledgeProvider } from "../knowledge/KnowledgeProviderFactory";
 import { parsePromptLibrary, blocksToMarkdown } from "../notion/parser";
 import { handlePromptsCommand } from "./promptLibraryHandler";
 import { handleNewFeatureCommand } from "./newFeatureHandler";
+import { handleJiraCommand } from "./jiraHandler";
 import { isCreateIntent, createProjectFromNotion } from "./projectCreator";
 import { getStagedDiff } from "./gitHelper";
 import { BankPrompt } from "./BankPrompt";
@@ -97,7 +98,13 @@ function makeHandler(context: vscode.ExtensionContext): vscode.ChatRequestHandle
       return handleSpecialtyCommand(userPrompt, stream);
     }
 
-    // 0b — Handle /new-feature command (early-exit — uses Jira, not knowledge base)
+    // 0b — Handle /jira command (early-exit — Jira issues manager)
+    if (request.command === "jira") {
+      await handleJiraCommand(userPrompt, stream, context, token);
+      return { metadata: { intent: "jira" } };
+    }
+
+    // 0c — Handle /new-feature command (early-exit — uses Jira, not knowledge base)
     if (request.command === "new-feature") {
       const activeSpecialty = getActiveSpecialty();
       await handleNewFeatureCommand(userPrompt, stream, request.model, context, activeSpecialty, token);
@@ -408,6 +415,7 @@ function resolvePageKey(command: string | undefined, prompt: string): string {
   if (command === "docs")           return "standards";
   if (command === "commit")         return "standards";
   if (command === "new-feature")    return "standards";
+  if (command === "jira")           return "standards";
   return detectIntent(prompt);
 }
 
