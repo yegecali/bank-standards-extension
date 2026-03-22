@@ -74,6 +74,10 @@
           {
             "name": "commit",
             "description": "Sugiere un mensaje de commit basado en los cambios staged y las convenciones del banco"
+          },
+          {
+            "name": "new-feature",
+            "description": "Flujo guiado: selecciona una historia de Jira, planifica e implementa siguiendo los estándares de la compañía"
           }
         ],
         "disambiguation": [
@@ -225,6 +229,26 @@
               }
             }
           }
+        },
+        "companyStandards.jiraUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Jira Cloud base URL (e.g. https://yourcompany.atlassian.net)"
+        },
+        "companyStandards.jiraEmail": {
+          "type": "string",
+          "default": "",
+          "description": "Atlassian account email for Jira API authentication"
+        },
+        "companyStandards.jiraToken": {
+          "type": "string",
+          "default": "",
+          "description": "Jira API token (from id.atlassian.com/manage-profile/security/api-tokens)"
+        },
+        "companyStandards.jiraProject": {
+          "type": "string",
+          "default": "",
+          "description": "Default Jira project key (e.g. BANK, DEV). Used when no project is specified in /new-feature."
         },
         "companyStandards.pagesMap": {
           "type": "object",
