@@ -2,7 +2,7 @@
   "name": "company-coding-standard",
   "displayName": "Company Coding Standard",
   "description": "VSCode extension for bank coding standards via Notion or Confluence — naming conventions, test reviews, project scaffolding, and AI agent.",
-  "version": "0.0.13",
+  "version": "0.0.14",
   "publisher": "yemicanchari",
   "preview": true,
   "license": "MIT",
@@ -250,8 +250,13 @@
           "description": "Jira API token (from id.atlassian.com/manage-profile/security/api-tokens)"
         },
         "companyStandards.jiraProject": {
-          "type": ["string", "array"],
-          "items": { "type": "string" },
+          "type": [
+            "string",
+            "array"
+          ],
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "description": "Jira project key(s). Accepts a single string (\"BANK\") or an array ([\"BANK\",\"DEV\"]). Used by /jira and /new-feature commands."
         },
