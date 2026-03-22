@@ -38,7 +38,7 @@ export class NotionKnowledgeProvider implements KnowledgeProvider {
 
 function toKnowledgeBlock(block: NotionBlock): KnowledgeBlock {
   const type = block.type;
-  const content = (block as any)[type] ?? {};
+  const content = (block[type] as Record<string, unknown>) ?? {};
 
   switch (type) {
     case "heading_1":

@@ -1,7 +1,6 @@
 import * as vscode from "vscode";
 import { createKnowledgeProvider } from "../../knowledge/KnowledgeProviderFactory";
-import { parseNamingRules, blocksToMarkdown } from "../../notion/parser";
-import { resolveWithCache } from "../../notion/cache";
+import { blocksToMarkdown } from "../../notion/parser";
 import { resolvePageId } from "../specialtyResolver";
 
 export interface GetStandardsInput {
@@ -17,7 +16,7 @@ export interface GetStandardsInput {
  * when the user asks about naming conventions or coding standards.
  */
 export class GetStandardsTool implements vscode.LanguageModelTool<GetStandardsInput> {
-  constructor(private readonly context: vscode.ExtensionContext) {}
+  constructor(_context: vscode.ExtensionContext) {}
 
   prepareInvocation(
     options: vscode.LanguageModelToolInvocationPrepareOptions<GetStandardsInput>
@@ -47,23 +46,20 @@ export class GetStandardsTool implements vscode.LanguageModelTool<GetStandardsIn
 
     try {
       const provider = createKnowledgeProvider();
-      const { pageTitle, fromCache } = await resolveWithCache(
-        this.context, pageId, provider, parseNamingRules, "GetStandardsTool"
-      );
-      const page    = await provider.getPage(pageId);
-      const content = blocksToMarkdown(page.blocks);
-      const topic   = options.input.topic?.toLowerCase();
+      const page     = await provider.getPage(pageId);
+      const content  = blocksToMarkdown(page.blocks);
+      const topic    = options.input.topic?.toLowerCase();
 
       const filtered = topic ? filterByTopic(content, topic) : content;
-      const source   = fromCache ? "cache" : provider.name + " live";
 
       return result(
-        `# Bank Standards — ${pageTitle}\n` +
-        `> Source: ${source}\n\n` +
+        `# Bank Standards — ${page.title}\n` +
+        `> Source: ${provider.name}\n\n` +
         filtered
       );
-    } catch (err: any) {
-      return result(`Error loading standards: ${err.message}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return result(`Error loading standards: ${msg}`);
     }
   }
 }

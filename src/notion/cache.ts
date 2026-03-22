@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { KnowledgeBlock, KnowledgeProvider } from "../knowledge/KnowledgeProvider";
+import { log } from "../logger";
 
 export interface CacheEntry<T> {
   pageId: string;
@@ -35,12 +36,12 @@ export async function resolveWithCache<T>(
   const meta = await provider.getPageMetadata(pageId);
 
   if (cached && cached.lastModified === meta.lastModified) {
-    console.log(`[${source}] Cache hit for page "${meta.title}" (${pageId}) via ${provider.name}`);
+    log(`[${source}] Cache hit for page "${meta.title}" (${pageId}) via ${provider.name}`);
     return { data: cached.data, pageTitle: meta.title, fromCache: true };
   }
 
   // Step 2 — cache miss or page updated
-  console.log(
+  log(
     `[${source}] Cache miss for "${meta.title}" via ${provider.name} — ` +
       (cached
         ? `page updated (${cached.lastModified} → ${meta.lastModified})`
