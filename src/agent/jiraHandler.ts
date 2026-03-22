@@ -114,22 +114,20 @@ async function listAndPickIssue(stream: vscode.ChatResponseStream): Promise<void
   }
 
   const items: IssuePickItem[] = issues.map((issue) => {
-    const timeLabel = issue.timeInProgress
-      ? `⏳ ${issue.timeInProgress} en progreso`
-      : `📅 ${issue.timeOpen} abierto`;
-    const subtaskLabel = issue.subtaskCount > 0 ? ` · ${issue.subtaskCount} subtarea(s)` : "";
+    const timeLabel    = issue.timeInProgress ? `⏳ ${issue.timeInProgress}` : "—";
+    const assigneeLabel = issue.assignee ? `👤 ${issue.assignee}` : "👤 Sin asignar";
 
     return {
       label:       `$(issue-opened) ${issue.key}`,
-      description: `${issue.priority} · ${issue.status} · ${timeLabel}`,
-      detail:      issue.summary + subtaskLabel,
+      description: `${issue.priority} · ${assigneeLabel} · ${timeLabel}`,
+      detail:      issue.summary,
       issueKey:    issue.key,
     };
   });
 
   const picked = await vscode.window.showQuickPick(items, {
-    title:              `Issues abiertas en ${projects.join(", ")} (${issues.length})`,
-    placeHolder:        "Escribe para filtrar por clave, prioridad o resumen…",
+    title:              `Issues en progreso — ${projects.join(", ")} (${issues.length})`,
+    placeHolder:        "Selecciona una issue para crear una subtarea…",
     matchOnDetail:      true,
     matchOnDescription: true,
   });
@@ -140,7 +138,7 @@ async function listAndPickIssue(stream: vscode.ChatResponseStream): Promise<void
   }
 
   log(`[JiraHandler] User selected issue: ${picked.issueKey}`);
-  await showIssueDetail(picked.issueKey, stream);
+  await createSubtaskInteractive(picked.issueKey, stream);
 }
 
 /**

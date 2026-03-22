@@ -10,8 +10,7 @@ export interface JiraIssueSummary {
   status: string;
   priority: string;
   project: string;
-  subtaskCount: number;
-  timeOpen: string;
+  assignee: string | null;
   timeInProgress: string | null;
   created: string;
   statusChangedDate: string | null;
@@ -101,7 +100,7 @@ export class JiraClient {
     this.validateConfig();
 
     const projectList = projectKeys.map((k) => `"${k}"`).join(",");
-    const jql = `project in (${projectList}) AND status in ("To Do","In Progress") ORDER BY priority DESC, updated DESC`;
+    const jql = `project in (${projectList}) AND status = "In Progress" ORDER BY priority DESC, updated DESC`;
     const url = `${this.baseUrl}/rest/api/3/search/jql`;
     log(`[JiraClient] POST issues → ${url} | jql: ${jql}`);
 
@@ -109,7 +108,7 @@ export class JiraClient {
       const res = await axios.post(url, {
         jql,
         maxResults,
-        fields: ["summary", "status", "priority", "created", "statuscategorychangedate", "subtasks", "project"],
+        fields: ["summary", "status", "priority", "created", "statuscategorychangedate", "assignee", "project"],
       }, { headers: { ...this.headers(), "Content-Type": "application/json" } });
       log(`[JiraClient] ← ${res.status} ${res.statusText} | ${res.data.issues?.length ?? 0} issues`);
 
@@ -118,7 +117,7 @@ export class JiraClient {
         const status            = fields["status"] as Record<string, unknown> | undefined;
         const priority          = fields["priority"] as Record<string, unknown> | undefined;
         const project           = fields["project"] as Record<string, unknown> | undefined;
-        const subtasks          = Array.isArray(fields["subtasks"]) ? fields["subtasks"] : [];
+        const assignee          = fields["assignee"] as Record<string, unknown> | null | undefined;
         const created           = String(fields["created"] ?? "");
         const statusChangedDate = typeof fields["statuscategorychangedate"] === "string"
           ? fields["statuscategorychangedate"]
@@ -131,9 +130,8 @@ export class JiraClient {
           status:           statusName,
           priority:         String(priority?.["name"] ?? ""),
           project:          String(project?.["key"] ?? ""),
-          subtaskCount:     subtasks.length,
-          timeOpen:         this.formatAge(created) ?? "—",
-          timeInProgress:   statusName === "In Progress" ? this.formatAge(statusChangedDate) : null,
+          assignee:         assignee ? String(assignee["displayName"] ?? assignee["emailAddress"] ?? "") : null,
+          timeInProgress:   this.formatAge(statusChangedDate),
           created,
           statusChangedDate,
         };
