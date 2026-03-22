@@ -10,7 +10,8 @@
       "mcp__claude_ai_Canva__request-outline-review",
       "mcp__claude_ai_Canva__generate-design-structured",
       "mcp__claude_ai_Canva__create-design-from-candidate",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(npm install:*)"
     ]
   }
 }
