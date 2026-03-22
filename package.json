@@ -81,7 +81,7 @@
           },
           {
             "name": "jira",
-            "description": "Gestiona issues de Jira: lista historias con métricas de tiempo, ve subtareas y crea subtareas. Uso: /jira | /jira PROJ-123 | /jira subtasks PROJ-123 | /jira create PROJ-123"
+            "description": "Gestiona issues de Jira: lista historias con métricas de tiempo, ve/crea subtareas y actualiza documentación. Uso: /jira | /jira PROJ-123 | /jira subtasks PROJ-123 | /jira create PROJ-123 | /jira update PROJ-123"
           }
         ],
         "disambiguation": [

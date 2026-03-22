@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { log, logError } from "../logger";
-import { JiraClient, JiraIssue, getConfiguredProjects } from "../jira/client";
+import { JiraClient, JiraIssue, JiraComment, getConfiguredProjects } from "../jira/client";
 
 const JIRA_CONFIG_HELP =
   `## ⚙️ Configura Jira primero\n\n` +
@@ -18,6 +18,7 @@ const USAGE_HELP =
   `| \`/jira\` | Listar issues abiertas |\n` +
   `| \`/jira PROJ-123\` | Ver detalle de una issue |\n` +
   `| \`/jira subtasks PROJ-123\` | Listar subtareas de una issue |\n` +
+  `| \`/jira update PROJ-123\` | Actualizar documentación (descripción, comentarios) |\n` +
   `| \`/jira create PROJ-123\` | Crear una subtarea |`;
 
 /**
@@ -64,6 +65,12 @@ export async function handleJiraCommand(
   const createMatch = arg.match(/^create\s+([A-Z][A-Z0-9]+-\d+)$/i);
   if (createMatch) {
     await createSubtaskInteractive(createMatch[1].toUpperCase(), stream);
+    return;
+  }
+
+  const updateMatch = arg.match(/^update\s+([A-Z][A-Z0-9]+-\d+)$/i);
+  if (updateMatch) {
+    await updateDocumentationInteractive(updateMatch[1].toUpperCase(), stream);
     return;
   }
 
@@ -305,4 +312,254 @@ async function createSubtaskInteractive(parentKey: string, stream: vscode.ChatRe
   );
 
   log(`[JiraHandler] Subtask created: ${newKey} under ${parentKey}`);
+}
+
+/**
+ * Interactive flow to update the documentation of a Jira issue.
+ * Options: description, summary, add comment, or edit existing comment.
+ */
+async function updateDocumentationInteractive(
+  issueKey: string,
+  stream: vscode.ChatResponseStream
+): Promise<void> {
+  stream.progress(`Cargando issue ${issueKey}…`);
+
+  const client = new JiraClient();
+  let issue: JiraIssue;
+  try {
+    issue = await client.getIssue(issueKey);
+  } catch (err: unknown) {
+    logError(`[JiraHandler] Failed to fetch issue ${issueKey} for update`, err);
+    const msg = err instanceof Error ? err.message : String(err);
+    stream.markdown(`❌ No pude cargar la issue **${issueKey}**: ${msg}`);
+    return;
+  }
+
+  stream.markdown(
+    `## ✏️ Actualizar documentación: **${issueKey}**\n\n` +
+    `> ${issue.summary}\n\n` +
+    `_Selecciona qué deseas actualizar en el cuadro de opciones._\n\n`
+  );
+
+  interface UpdateOption extends vscode.QuickPickItem {
+    action: string;
+  }
+
+  const options: UpdateOption[] = [
+    {
+      label:       "$(edit) Descripción",
+      description: "Actualizar el cuerpo de descripción de la issue",
+      action:      "description",
+    },
+    {
+      label:       "$(pencil) Resumen (título)",
+      description: "Cambiar el título principal de la issue",
+      action:      "summary",
+    },
+    {
+      label:       "$(comment) Agregar comentario",
+      description: "Añadir un nuevo comentario a la issue",
+      action:      "add-comment",
+    },
+    {
+      label:       "$(sync) Editar comentario existente",
+      description: "Seleccionar y modificar un comentario anterior",
+      action:      "edit-comment",
+    },
+  ];
+
+  const picked = await vscode.window.showQuickPick(options, {
+    title:       `¿Qué deseas actualizar en ${issueKey}?`,
+    placeHolder: "Selecciona una opción…",
+  });
+
+  if (!picked) {
+    stream.markdown("Actualización cancelada.");
+    return;
+  }
+
+  const config  = vscode.workspace.getConfiguration("companyStandards");
+  const jiraUrl = (config.get<string>("jiraUrl") ?? "").replace(/\/$/, "");
+
+  // ── Descripción ────────────────────────────────────────────────────────────
+  if (picked.action === "description") {
+    stream.markdown(
+      `### Descripción actual\n\n` +
+      (issue.description ? issue.description : "_Sin descripción._") +
+      `\n\n_Se abrirá un cuadro para editar la descripción._\n\n`
+    );
+
+    const newDesc = await vscode.window.showInputBox({
+      title:       `Actualizar descripción de ${issueKey}`,
+      prompt:      "Nueva descripción (texto plano; usa doble Enter para separar párrafos)",
+      value:       issue.description,
+      validateInput: (v) => (!v?.trim() ? "La descripción no puede estar vacía" : undefined),
+    });
+
+    if (!newDesc || !newDesc.trim()) {
+      stream.markdown("Actualización cancelada.");
+      return;
+    }
+
+    stream.progress(`Actualizando descripción de ${issueKey}…`);
+    try {
+      await client.updateIssue(issueKey, { description: newDesc.trim() });
+    } catch (err: unknown) {
+      logError(`[JiraHandler] Failed to update description of ${issueKey}`, err);
+      const msg = err instanceof Error ? err.message : String(err);
+      stream.markdown(`❌ Error al actualizar la descripción: **${msg}**`);
+      return;
+    }
+
+    stream.markdown(
+      `## ✅ Descripción actualizada\n\n` +
+      `**Issue:** ${issueKey}\n\n` +
+      `🔗 [Ver ${issueKey} en Jira](${jiraUrl}/browse/${issueKey})`
+    );
+    log(`[JiraHandler] Description updated for ${issueKey}`);
+  }
+
+  // ── Resumen (título) ───────────────────────────────────────────────────────
+  else if (picked.action === "summary") {
+    const newSummary = await vscode.window.showInputBox({
+      title:       `Actualizar resumen de ${issueKey}`,
+      prompt:      "Nuevo resumen (título de la issue)",
+      value:       issue.summary,
+      validateInput: (v) => (!v?.trim() ? "El resumen no puede estar vacío" : undefined),
+    });
+
+    if (!newSummary || !newSummary.trim()) {
+      stream.markdown("Actualización cancelada.");
+      return;
+    }
+
+    stream.progress(`Actualizando resumen de ${issueKey}…`);
+    try {
+      await client.updateIssue(issueKey, { summary: newSummary.trim() });
+    } catch (err: unknown) {
+      logError(`[JiraHandler] Failed to update summary of ${issueKey}`, err);
+      const msg = err instanceof Error ? err.message : String(err);
+      stream.markdown(`❌ Error al actualizar el resumen: **${msg}**`);
+      return;
+    }
+
+    stream.markdown(
+      `## ✅ Resumen actualizado\n\n` +
+      `| Campo | Valor |\n|---|---|\n` +
+      `| **Issue** | ${issueKey} |\n` +
+      `| **Nuevo resumen** | ${newSummary.trim()} |\n\n` +
+      `🔗 [Ver ${issueKey} en Jira](${jiraUrl}/browse/${issueKey})`
+    );
+    log(`[JiraHandler] Summary updated for ${issueKey}`);
+  }
+
+  // ── Agregar comentario ─────────────────────────────────────────────────────
+  else if (picked.action === "add-comment") {
+    const comment = await vscode.window.showInputBox({
+      title:       `Agregar comentario en ${issueKey}`,
+      prompt:      "Escribe tu comentario",
+      placeHolder: "Ej: Se implementó la validación usando el patrón AAA...",
+      validateInput: (v) => (!v?.trim() ? "El comentario no puede estar vacío" : undefined),
+    });
+
+    if (!comment || !comment.trim()) {
+      stream.markdown("Operación cancelada.");
+      return;
+    }
+
+    stream.progress(`Agregando comentario en ${issueKey}…`);
+    let commentId: string;
+    try {
+      commentId = await client.addComment(issueKey, comment.trim());
+    } catch (err: unknown) {
+      logError(`[JiraHandler] Failed to add comment to ${issueKey}`, err);
+      const msg = err instanceof Error ? err.message : String(err);
+      stream.markdown(`❌ Error al agregar el comentario: **${msg}**`);
+      return;
+    }
+
+    stream.markdown(
+      `## ✅ Comentario agregado\n\n` +
+      `| Campo | Valor |\n|---|---|\n` +
+      `| **Issue** | ${issueKey} |\n` +
+      `| **ID del comentario** | ${commentId} |\n\n` +
+      `🔗 [Ver ${issueKey} en Jira](${jiraUrl}/browse/${issueKey})`
+    );
+    log(`[JiraHandler] Comment added to ${issueKey}: id ${commentId}`);
+  }
+
+  // ── Editar comentario existente ────────────────────────────────────────────
+  else if (picked.action === "edit-comment") {
+    stream.progress(`Cargando comentarios de ${issueKey}…`);
+
+    let comments: JiraComment[];
+    try {
+      comments = await client.listComments(issueKey);
+    } catch (err: unknown) {
+      logError(`[JiraHandler] Failed to list comments for ${issueKey}`, err);
+      const msg = err instanceof Error ? err.message : String(err);
+      stream.markdown(`❌ No pude cargar los comentarios de **${issueKey}**: ${msg}`);
+      return;
+    }
+
+    if (comments.length === 0) {
+      stream.markdown(`ℹ️ La issue **${issueKey}** no tiene comentarios todavía.`);
+      return;
+    }
+
+    interface CommentPickItem extends vscode.QuickPickItem {
+      commentId: string;
+      currentBody: string;
+    }
+
+    const commentItems: CommentPickItem[] = comments.map((c) => ({
+      label:       `$(comment) ${c.author}`,
+      description: `hace ${c.timeAgo}`,
+      detail:      c.body.length > 120 ? c.body.slice(0, 120) + "…" : c.body,
+      commentId:   c.id,
+      currentBody: c.body,
+    }));
+
+    const pickedComment = await vscode.window.showQuickPick(commentItems, {
+      title:         `Selecciona el comentario a editar (${issueKey})`,
+      placeHolder:   "Escribe para filtrar…",
+      matchOnDetail: true,
+    });
+
+    if (!pickedComment) {
+      stream.markdown("Edición cancelada.");
+      return;
+    }
+
+    const updatedBody = await vscode.window.showInputBox({
+      title:       `Editar comentario en ${issueKey}`,
+      prompt:      "Nuevo contenido del comentario",
+      value:       pickedComment.currentBody,
+      validateInput: (v) => (!v?.trim() ? "El comentario no puede estar vacío" : undefined),
+    });
+
+    if (!updatedBody || !updatedBody.trim()) {
+      stream.markdown("Edición cancelada.");
+      return;
+    }
+
+    stream.progress(`Actualizando comentario en ${issueKey}…`);
+    try {
+      await client.updateComment(issueKey, pickedComment.commentId, updatedBody.trim());
+    } catch (err: unknown) {
+      logError(`[JiraHandler] Failed to update comment ${pickedComment.commentId} in ${issueKey}`, err);
+      const msg = err instanceof Error ? err.message : String(err);
+      stream.markdown(`❌ Error al actualizar el comentario: **${msg}**`);
+      return;
+    }
+
+    stream.markdown(
+      `## ✅ Comentario actualizado\n\n` +
+      `| Campo | Valor |\n|---|---|\n` +
+      `| **Issue** | ${issueKey} |\n` +
+      `| **Autor original** | ${pickedComment.label.replace("$(comment) ", "")} |\n\n` +
+      `🔗 [Ver ${issueKey} en Jira](${jiraUrl}/browse/${issueKey})`
+    );
+    log(`[JiraHandler] Comment ${pickedComment.commentId} updated in ${issueKey}`);
+  }
 }
