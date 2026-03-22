@@ -11,7 +11,9 @@
       "mcp__claude_ai_Canva__generate-design-structured",
       "mcp__claude_ai_Canva__create-design-from-candidate",
       "Bash(node:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(npm version:*)",
+      "Bash(grep -E \"\\\\.ts$\")"
     ]
   }
 }
