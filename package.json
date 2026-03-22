@@ -2,7 +2,7 @@
   "name": "company-coding-standard",
   "displayName": "Company Coding Standard",
   "description": "VSCode extension for bank coding standards via Notion or Confluence — naming conventions, test reviews, project scaffolding, and AI agent.",
-  "version": "0.0.14",
+  "version": "0.0.15",
   "publisher": "yemicanchari",
   "preview": true,
   "license": "MIT",
