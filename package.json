@@ -74,6 +74,14 @@
           {
             "name": "commit",
             "description": "Sugiere un mensaje de commit basado en los cambios staged y las convenciones del banco"
+          },
+          {
+            "name": "new-feature",
+            "description": "Flujo guiado: selecciona una historia de Jira, planifica e implementa siguiendo los estándares de la compañía"
+          },
+          {
+            "name": "jira",
+            "description": "Gestiona issues de Jira: lista historias con métricas de tiempo, ve subtareas y crea subtareas. Uso: /jira | /jira PROJ-123 | /jira subtasks PROJ-123 | /jira create PROJ-123"
           }
         ],
         "disambiguation": [
@@ -225,6 +233,27 @@
               }
             }
           }
+        },
+        "companyStandards.jiraUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Jira Cloud base URL (e.g. https://yourcompany.atlassian.net)"
+        },
+        "companyStandards.jiraEmail": {
+          "type": "string",
+          "default": "",
+          "description": "Atlassian account email for Jira API authentication"
+        },
+        "companyStandards.jiraToken": {
+          "type": "string",
+          "default": "",
+          "description": "Jira API token (from id.atlassian.com/manage-profile/security/api-tokens)"
+        },
+        "companyStandards.jiraProject": {
+          "type": ["string", "array"],
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Jira project key(s). Accepts a single string (\"BANK\") or an array ([\"BANK\",\"DEV\"]). Used by /jira and /new-feature commands."
         },
         "companyStandards.pagesMap": {
           "type": "object",
