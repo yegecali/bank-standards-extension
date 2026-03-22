@@ -100,7 +100,11 @@ export class JiraClient {
     this.validateConfig();
 
     const projectList = projectKeys.map((k) => `"${k}"`).join(",");
-    const jql = `project in (${projectList}) AND status = "In Progress" ORDER BY priority DESC, updated DESC`;
+    const jql =
+      `project in (${projectList})` +
+      ` AND status = "In Progress"` +
+      ` AND issuetype in ("Historia","Story","Request","Spike","Tarea","Task")` +
+      ` ORDER BY priority DESC, updated DESC`;
     const url = `${this.baseUrl}/rest/api/3/search/jql`;
     log(`[JiraClient] POST issues → ${url} | jql: ${jql}`);
 
