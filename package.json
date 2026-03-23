@@ -2,7 +2,7 @@
   "name": "company-coding-standard",
   "displayName": "Company Coding Standard",
   "description": "Define and enforce your company's development standards directly in VSCode — powered by your own knowledge base (Notion or Confluence). Naming conventions, test standards, project scaffolding, prompt library, Jira integration, and AI agent.",
-  "version": "0.0.21",
+  "version": "0.0.22",
   "publisher": "yemicanchari",
   "preview": true,
   "license": "MIT",
@@ -259,6 +259,11 @@
           },
           "default": [],
           "description": "Jira project key(s). Accepts a single string (\"BANK\") or an array ([\"BANK\",\"DEV\"]). Used by /jira and /new-feature commands."
+        },
+        "companyStandards.jiraJql": {
+          "type": "string",
+          "default": "",
+          "description": "Custom JQL query used by /jira to list issues. When set, overrides the default project/status filter. Example: \"project = BANK AND assignee = currentUser() AND status != Done ORDER BY priority DESC\""
         },
         "companyStandards.pagesMap": {
           "type": "object",

@@ -73,50 +73,64 @@ export async function handleJiraCommand(
 // ─── Sub-actions ─────────────────────────────────────────────────────────────
 
 /**
- * Lists open issues from all configured projects as a markdown table.
+ * Lists issues using a custom JQL (if configured) or the default project/status filter.
+ * Renders results as a markdown table.
  */
 async function listAndPickIssue(stream: vscode.ChatResponseStream): Promise<void> {
-  const projects = getConfiguredProjects();
-
-  if (projects.length === 0) {
-    stream.markdown(
-      `⚠️ No hay proyectos de Jira configurados.\n\n` +
-      `Configura \`companyStandards.jiraProject\` con un string (\`"BANK"\`) ` +
-      `o un array (\`["BANK","DEV"]\`) en tus settings.`
-    );
-    return;
-  }
-
-  stream.progress(`Cargando issues de ${projects.join(", ")}…`);
-
-  const client = new JiraClient();
+  const config     = vscode.workspace.getConfiguration("companyStandards");
+  const customJql  = (config.get<string>("jiraJql") ?? "").trim();
+  const client     = new JiraClient();
   let issues;
-  try {
-    issues = await client.listIssues(projects);
-  } catch (err: unknown) {
-    logError("[JiraHandler] Failed to list issues", err);
-    const msg = err instanceof Error ? err.message : String(err);
-    stream.markdown(`❌ No pude obtener las issues de Jira: **${msg}**`);
-    return;
+  let heading: string;
+
+  if (customJql) {
+    stream.progress(`Ejecutando JQL configurado…`);
+    log(`[JiraHandler] Using custom JQL: ${customJql}`);
+    try {
+      issues = await client.searchByJql(customJql);
+    } catch (err: unknown) {
+      logError("[JiraHandler] Failed to execute custom JQL", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      stream.markdown(`❌ Error ejecutando el JQL configurado: **${msg}**\n\n_Revisa \`companyStandards.jiraJql\` en tus settings._`);
+      return;
+    }
+    heading = `📋 Resultados de JQL (${issues.length})`;
+  } else {
+    const projects = getConfiguredProjects();
+    if (projects.length === 0) {
+      stream.markdown(
+        `⚠️ No hay proyectos de Jira configurados.\n\n` +
+        `Configura \`companyStandards.jiraProject\` o \`companyStandards.jiraJql\` en tus settings.`
+      );
+      return;
+    }
+    stream.progress(`Cargando issues de ${projects.join(", ")}…`);
+    try {
+      issues = await client.listIssues(projects);
+    } catch (err: unknown) {
+      logError("[JiraHandler] Failed to list issues", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      stream.markdown(`❌ No pude obtener las issues de Jira: **${msg}**`);
+      return;
+    }
+    heading = `📋 Issues en progreso — ${projects.join(", ")} (${issues.length})`;
   }
 
   if (issues.length === 0) {
-    stream.markdown(
-      `ℹ️ No se encontraron issues en progreso en: **${projects.join(", ")}**.`
-    );
+    stream.markdown(`ℹ️ La consulta no devolvió resultados.`);
     return;
   }
 
-  stream.markdown(`## 📋 Issues en progreso — ${projects.join(", ")} (${issues.length})\n\n`);
+  stream.markdown(`## ${heading}\n\n`);
   stream.markdown(
-    `| Clave | Resumen | Prioridad | Asignado a | Tiempo en progreso |\n` +
-    `|---|---|---|---|---|\n`
+    `| Clave | Resumen | Estado | Prioridad | Asignado a | Tiempo en progreso |\n` +
+    `|---|---|---|---|---|---|\n`
   );
   for (const issue of issues) {
-    const timeLabel    = issue.timeInProgress ? `⏳ ${issue.timeInProgress}` : "—";
+    const timeLabel     = issue.timeInProgress ? `⏳ ${issue.timeInProgress}` : "—";
     const assigneeLabel = issue.assignee ?? "Sin asignar";
     stream.markdown(
-      `| ${issue.key} | ${issue.summary} | ${issue.priority} | ${assigneeLabel} | ${timeLabel} |\n`
+      `| ${issue.key} | ${issue.summary} | ${issue.status} | ${issue.priority} | ${assigneeLabel} | ${timeLabel} |\n`
     );
   }
   stream.markdown(`\n_Para crear una subtarea usa \`/jira create PROJ-123\`._\n`);

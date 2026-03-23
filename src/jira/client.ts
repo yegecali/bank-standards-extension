@@ -94,6 +94,50 @@ export class JiraClient {
   }
 
   /**
+   * Executes an arbitrary JQL query and returns a summary list.
+   * Used when companyStandards.jiraJql is configured.
+   */
+  async searchByJql(jql: string, maxResults = 50): Promise<JiraIssueSummary[]> {
+    this.validateConfig();
+    const url = `${this.baseUrl}/rest/api/3/search/jql`;
+    log(`[JiraClient] POST searchByJql → ${url} | jql: ${jql}`);
+
+    try {
+      const res = await axios.post(url, {
+        jql,
+        maxResults,
+        fields: ["summary", "status", "priority", "created", "statuscategorychangedate", "assignee", "project"],
+      }, { headers: { ...this.headers(), "Content-Type": "application/json" } });
+      log(`[JiraClient] ← ${res.status} ${res.statusText} | ${res.data.issues?.length ?? 0} issues`);
+
+      return (res.data.issues ?? []).map((issue: Record<string, unknown>) => {
+        const fields            = (issue["fields"] ?? {}) as Record<string, unknown>;
+        const status            = fields["status"] as Record<string, unknown> | undefined;
+        const priority          = fields["priority"] as Record<string, unknown> | undefined;
+        const project           = fields["project"] as Record<string, unknown> | undefined;
+        const assignee          = fields["assignee"] as Record<string, unknown> | null | undefined;
+        const created           = String(fields["created"] ?? "");
+        const statusChangedDate = typeof fields["statuscategorychangedate"] === "string"
+          ? fields["statuscategorychangedate"]
+          : null;
+        return {
+          key:              String(issue["key"]),
+          summary:          String(fields["summary"] ?? ""),
+          status:           String(status?.["name"] ?? ""),
+          priority:         String(priority?.["name"] ?? ""),
+          project:          String(project?.["key"] ?? ""),
+          assignee:         assignee ? String(assignee["displayName"] ?? assignee["emailAddress"] ?? "") : null,
+          timeInProgress:   this.formatAge(statusChangedDate),
+          created,
+          statusChangedDate,
+        };
+      });
+    } catch (err) {
+      throw this.wrapError(err, url);
+    }
+  }
+
+  /**
    * Lists open issues across one or more Jira projects.
    * Includes time-open and time-in-progress metrics.
    */
