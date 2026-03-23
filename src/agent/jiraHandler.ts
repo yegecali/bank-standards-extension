@@ -198,28 +198,28 @@ async function showIssueDetail(issueKey: string, stream: vscode.ChatResponseStre
 }
 
 /**
- * Lists subtasks of a specific issue in a markdown table.
+ * Lists subtasks of a specific issue assigned to the current user.
  */
 async function listSubtasks(issueKey: string, stream: vscode.ChatResponseStream): Promise<void> {
-  stream.progress(`Cargando subtareas de ${issueKey}…`);
+  stream.progress(`Cargando tus subtareas en ${issueKey}…`);
 
   const client = new JiraClient();
   let subtasks;
   try {
-    subtasks = await client.getSubtasks(issueKey);
+    subtasks = await client.getMySubtasks(issueKey);
   } catch (err: unknown) {
-    logError(`[JiraHandler] Failed to get subtasks for ${issueKey}`, err);
+    logError(`[JiraHandler] Failed to get my subtasks for ${issueKey}`, err);
     const msg = err instanceof Error ? err.message : String(err);
     stream.markdown(`❌ No pude cargar las subtareas de **${issueKey}**: ${msg}`);
     return;
   }
 
   if (subtasks.length === 0) {
-    stream.markdown(`ℹ️ La issue **${issueKey}** no tiene subtareas.`);
+    stream.markdown(`ℹ️ No tienes subtareas asignadas en **${issueKey}**.`);
     return;
   }
 
-  stream.markdown(`## 🔗 Subtareas de ${issueKey} (${subtasks.length})\n\n`);
+  stream.markdown(`## 🔗 Mis subtareas en ${issueKey} (${subtasks.length})\n\n`);
   stream.markdown(
     `| Clave | Resumen | Estado | Prioridad | Tiempo abierto |\n` +
     `|---|---|---|---|---|\n`
@@ -230,7 +230,7 @@ async function listSubtasks(issueKey: string, stream: vscode.ChatResponseStream)
     );
   }
 
-  log(`[JiraHandler] Subtasks listed for ${issueKey}: ${subtasks.length}`);
+  log(`[JiraHandler] My subtasks listed for ${issueKey}: ${subtasks.length}`);
 }
 
 /**

@@ -21,6 +21,7 @@ export interface JiraSubtask {
   summary: string;
   status: string;
   priority: string;
+  assignee: string | null;
   timeOpen: string;
 }
 
@@ -186,12 +187,14 @@ export class JiraClient {
         const stFields   = (st["fields"] ?? {}) as Record<string, unknown>;
         const stStatus   = stFields["status"] as Record<string, unknown> | undefined;
         const stPriority = stFields["priority"] as Record<string, unknown> | undefined;
+        const stAssignee = stFields["assignee"] as Record<string, unknown> | null | undefined;
         const stCreated  = typeof stFields["created"] === "string" ? stFields["created"] : null;
         return {
           key:      String(st["key"]),
           summary:  String(stFields["summary"] ?? ""),
           status:   String(stStatus?.["name"] ?? ""),
           priority: String(stPriority?.["name"] ?? ""),
+          assignee: stAssignee ? String(stAssignee["displayName"] ?? stAssignee["emailAddress"] ?? "") : null,
           timeOpen: this.formatAge(stCreated) ?? "—",
         };
       });
@@ -215,12 +218,49 @@ export class JiraClient {
   }
 
   /**
-   * Returns the subtasks of a given issue.
+   * Returns all subtasks of a given issue.
    * Uses getIssue() internally — subtasks are already included.
    */
   async getSubtasks(issueKey: string): Promise<JiraSubtask[]> {
     const issue = await this.getIssue(issueKey);
     return issue.subtasks;
+  }
+
+  /**
+   * Returns subtasks of a given issue assigned to the current user (currentUser() JQL).
+   */
+  async getMySubtasks(parentKey: string): Promise<JiraSubtask[]> {
+    this.validateConfig();
+    const jql = `parent = "${parentKey}" AND assignee = currentUser() ORDER BY priority DESC, updated DESC`;
+    const url  = `${this.baseUrl}/rest/api/3/search/jql`;
+    log(`[JiraClient] POST getMySubtasks → ${url} | jql: ${jql}`);
+
+    try {
+      const res = await axios.post(url, {
+        jql,
+        maxResults: 50,
+        fields: ["summary", "status", "priority", "assignee", "created"],
+      }, { headers: { ...this.headers(), "Content-Type": "application/json" } });
+      log(`[JiraClient] ← ${res.status} ${res.statusText} | ${res.data.issues?.length ?? 0} subtasks`);
+
+      return (res.data.issues ?? []).map((issue: Record<string, unknown>) => {
+        const fields    = (issue["fields"] ?? {}) as Record<string, unknown>;
+        const status    = fields["status"]   as Record<string, unknown> | undefined;
+        const priority  = fields["priority"] as Record<string, unknown> | undefined;
+        const assignee  = fields["assignee"] as Record<string, unknown> | null | undefined;
+        const created   = typeof fields["created"] === "string" ? fields["created"] : null;
+        return {
+          key:      String(issue["key"]),
+          summary:  String(fields["summary"] ?? ""),
+          status:   String(status?.["name"] ?? ""),
+          priority: String(priority?.["name"] ?? ""),
+          assignee: assignee ? String(assignee["displayName"] ?? assignee["emailAddress"] ?? "") : null,
+          timeOpen: this.formatAge(created) ?? "—",
+        };
+      });
+    } catch (err) {
+      throw this.wrapError(err, url);
+    }
   }
 
   /**
