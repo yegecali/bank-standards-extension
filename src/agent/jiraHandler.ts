@@ -15,10 +15,10 @@ const JIRA_CONFIG_HELP =
 const USAGE_HELP =
   `ℹ️ **Uso de \`/jira\`:**\n\n` +
   `| Comando | Acción |\n|---|---|\n` +
-  `| \`/jira\` | Listar issues abiertas |\n` +
+  `| \`/jira\` | Listar issues en progreso de los proyectos configurados |\n` +
   `| \`/jira PROJ-123\` | Ver detalle de una issue |\n` +
-  `| \`/jira subtasks PROJ-123\` | Listar subtareas de una issue |\n` +
-  `| \`/jira create PROJ-123\` | Crear una subtarea |`;
+  `| \`/jira subtasks PROJ-123\` | Listar mis subtareas asignadas en una issue |\n` +
+  `| \`/jira create PROJ-123\` | Crear una subtarea en una issue |`;
 
 /**
  * Main handler for the @company /jira command.
@@ -73,8 +73,7 @@ export async function handleJiraCommand(
 // ─── Sub-actions ─────────────────────────────────────────────────────────────
 
 /**
- * Lists open issues from all configured projects via QuickPick,
- * then shows the selected issue's detail.
+ * Lists open issues from all configured projects as a markdown table.
  */
 async function listAndPickIssue(stream: vscode.ChatResponseStream): Promise<void> {
   const projects = getConfiguredProjects();
@@ -103,42 +102,26 @@ async function listAndPickIssue(stream: vscode.ChatResponseStream): Promise<void
 
   if (issues.length === 0) {
     stream.markdown(
-      `ℹ️ No se encontraron issues abiertas en: **${projects.join(", ")}**.\n\n` +
-      `Solo se muestran issues en estado "To Do" o "In Progress".`
+      `ℹ️ No se encontraron issues en progreso en: **${projects.join(", ")}**.`
     );
     return;
   }
 
-  interface IssuePickItem extends vscode.QuickPickItem {
-    issueKey: string;
-  }
-
-  const items: IssuePickItem[] = issues.map((issue) => {
+  stream.markdown(`## 📋 Issues en progreso — ${projects.join(", ")} (${issues.length})\n\n`);
+  stream.markdown(
+    `| Clave | Resumen | Prioridad | Asignado a | Tiempo en progreso |\n` +
+    `|---|---|---|---|---|\n`
+  );
+  for (const issue of issues) {
     const timeLabel    = issue.timeInProgress ? `⏳ ${issue.timeInProgress}` : "—";
-    const assigneeLabel = issue.assignee ? `👤 ${issue.assignee}` : "👤 Sin asignar";
-
-    return {
-      label:       `$(issue-opened) ${issue.key}`,
-      description: `${issue.priority} · ${assigneeLabel} · ${timeLabel}`,
-      detail:      issue.summary,
-      issueKey:    issue.key,
-    };
-  });
-
-  const picked = await vscode.window.showQuickPick(items, {
-    title:              `Issues en progreso — ${projects.join(", ")} (${issues.length})`,
-    placeHolder:        "Selecciona una issue para crear una subtarea…",
-    matchOnDetail:      true,
-    matchOnDescription: true,
-  });
-
-  if (!picked) {
-    stream.markdown("Operación cancelada.");
-    return;
+    const assigneeLabel = issue.assignee ?? "Sin asignar";
+    stream.markdown(
+      `| ${issue.key} | ${issue.summary} | ${issue.priority} | ${assigneeLabel} | ${timeLabel} |\n`
+    );
   }
+  stream.markdown(`\n_Para crear una subtarea usa \`/jira create PROJ-123\`._\n`);
 
-  log(`[JiraHandler] User selected issue: ${picked.issueKey}`);
-  await createSubtaskInteractive(picked.issueKey, stream);
+  log(`[JiraHandler] Issues listed: ${issues.length}`);
 }
 
 /**
