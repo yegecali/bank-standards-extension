@@ -6,6 +6,7 @@ import { parsePromptLibrary, blocksToMarkdown } from "../notion/parser";
 import { handlePromptsCommand } from "./promptLibraryHandler";
 import { handleNewFeatureCommand } from "./newFeatureHandler";
 import { handleJiraCommand } from "./jiraHandler";
+import { handleProjectCommand } from "./projectActionHandler";
 import { isCreateIntent, createProjectFromNotion } from "./projectCreator";
 import { getStagedDiff } from "./gitHelper";
 import { BankPrompt } from "./BankPrompt";
@@ -109,6 +110,36 @@ function makeHandler(context: vscode.ExtensionContext): vscode.ChatRequestHandle
       const activeSpecialty = getActiveSpecialty();
       await handleNewFeatureCommand(userPrompt, stream, request.model, context, activeSpecialty, token);
       return { metadata: { intent: "new-feature", specialty: activeSpecialty } };
+    }
+
+    // 0d — Handle /project command (early-exit — uses projectActionsPage from settings)
+    if (request.command === "project") {
+      const config      = vscode.workspace.getConfiguration("companyStandards");
+      const actionsPage = (config.get<string>("projectActionsPage") ?? "").trim();
+
+      if (!actionsPage) {
+        stream.markdown(
+          `⚠️ Configura \`companyStandards.projectActionsPage\` con el ID o URL de la página ` +
+          `de Notion/Confluence que contiene las acciones de proyecto.\n\n` +
+          `Cada encabezado H2 de esa página define una acción:\n` +
+          "```\n## agrega-redis\nCrea una interfaz RedisClient...\n\n## agrega-client-rest\n...\n```"
+        );
+        return { metadata: { intent: "project" } };
+      }
+
+      stream.progress("Cargando acciones de proyecto…");
+      try {
+        const provider = createKnowledgeProvider();
+        const page     = await provider.getPage(actionsPage);
+        const templates = parsePromptLibrary(page.blocks);
+        log(`[BankAgent] /project — loaded ${templates.length} actions from "${actionsPage}"`);
+        await handleProjectCommand(userPrompt, templates, stream, request.model, token, page.title);
+      } catch (err: unknown) {
+        logError("[BankAgent] /project — failed to load actions page", err);
+        const msg = err instanceof Error ? err.message : String(err);
+        stream.markdown(`❌ No pude cargar la página de acciones: **${msg}**`);
+      }
+      return { metadata: { intent: "project" } };
     }
 
     // 1 — Detect specialty: prompt mention > active setting

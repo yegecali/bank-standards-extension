@@ -2,7 +2,7 @@
   "name": "company-coding-standard",
   "displayName": "Company Coding Standard",
   "description": "Define and enforce your company's development standards directly in VSCode — powered by your own knowledge base (Notion or Confluence). Naming conventions, test standards, project scaffolding, prompt library, Jira integration, and AI agent.",
-  "version": "0.0.23",
+  "version": "0.0.24",
   "publisher": "yemicanchari",
   "preview": true,
   "license": "MIT",
@@ -82,6 +82,10 @@
           {
             "name": "jira",
             "description": "Gestiona issues de Jira: lista historias con métricas de tiempo, ve/crea subtareas y actualiza documentación. Uso: /jira | /jira PROJ-123 | /jira subtasks PROJ-123 | /jira create PROJ-123 | /jira update PROJ-123"
+          },
+          {
+            "name": "project",
+            "description": "Ejecuta acciones sobre tu proyecto usando prompts del knowledge base. Lee pom.xml, properties y estructura del workspace, genera/modifica archivos. Uso: /project | /project <acción> (ej: /project agrega-redis, /project agrega-client-rest)"
           }
         ],
         "disambiguation": [
@@ -427,6 +431,11 @@
           },
           "default": [],
           "description": "Jira project key(s). Accepts a single string (\"BANK\") or an array ([\"BANK\",\"DEV\"]). Used by /jira and /new-feature commands."
+        },
+        "companyStandards.projectActionsPage": {
+          "type": "string",
+          "default": "",
+          "description": "ID or URL of the Notion/Confluence page that contains the project action prompts used by /project. Each H2 heading defines one action (e.g. ## agrega-redis)."
         },
         "companyStandards.jiraJql": {
           "type": "string",
