@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { log, logError } from "../logger";
-import { JiraClient, JiraIssue, getConfiguredProjects } from "../jira/client";
+import { JiraClient, JiraIssue, JiraComment, getConfiguredProjects } from "../jira/client";
 
 const JIRA_CONFIG_HELP =
   `## ⚙️ Configura Jira primero\n\n` +
@@ -18,6 +18,7 @@ const USAGE_HELP =
   `| \`/jira\` | Listar issues abiertas |\n` +
   `| \`/jira PROJ-123\` | Ver detalle de una issue |\n` +
   `| \`/jira subtasks PROJ-123\` | Listar subtareas de una issue |\n` +
+  `| \`/jira update PROJ-123\` | Actualizar documentación (descripción, comentarios) |\n` +
   `| \`/jira create PROJ-123\` | Crear una subtarea |`;
 
 /**
@@ -67,7 +68,48 @@ export async function handleJiraCommand(
     return;
   }
 
+  const updateMatch = arg.match(/^update\s+([A-Z][A-Z0-9]+-\d+)$/i);
+  if (updateMatch) {
+    await updateDocumentationInteractive(updateMatch[1].toUpperCase(), stream);
+    return;
+  }
+
   stream.markdown(USAGE_HELP);
+}
+
+// ─── Formatting helpers ───────────────────────────────────────────────────────
+
+/** Reads the subtask age threshold (in days) from settings. Default: 3. */
+function getSubtaskAgeThreshold(): number {
+  const config = vscode.workspace.getConfiguration("companyStandards");
+  return config.get<number>("subtaskAgeThresholdDays") ?? 3;
+}
+
+/**
+ * Returns true if the subtask was created more than `thresholdDays` days ago.
+ * Returns false if `createdRaw` is null/invalid (cannot determine age).
+ */
+function isOverThreshold(createdRaw: string | null | undefined, thresholdDays: number): boolean {
+  if (!createdRaw) return false;
+  const ms = Date.now() - new Date(createdRaw).getTime();
+  if (isNaN(ms) || ms < 0) return false;
+  return ms / 86_400_000 > thresholdDays;
+}
+
+/** Returns the first word of a full name (e.g. "Jose Luis Cacsire" → "Jose") */
+function firstNameOnly(fullName: string): string {
+  if (!fullName || fullName === "—") return "—";
+  return fullName.trim().split(/\s+/)[0];
+}
+
+/**
+ * Truncates a string to the first `max` words.
+ * If truncated, appends "...".
+ */
+function truncateWords(text: string, max: number): string {
+  const words = text.trim().split(/\s+/);
+  if (words.length <= max) return text;
+  return words.slice(0, max).join(" ") + "...";
 }
 
 // ─── Sub-actions ─────────────────────────────────────────────────────────────
@@ -109,17 +151,31 @@ async function listAndPickIssue(stream: vscode.ChatResponseStream): Promise<void
     return;
   }
 
+  // ── Markdown table in chat ─────────────────────────────────────────────────
+  stream.markdown(
+    `## 📋 Resultados de JQL (${issues.length})\n\n` +
+    `| Clave | Resumen | Asignado a | Tiempo en progreso |\n` +
+    `|---|---|---|---|\n` +
+    issues.map((issue) => {
+      const resumen   = truncateWords(issue.summary, 10);
+      const asignado  = issue.assignee ? firstNameOnly(issue.assignee) : "—";
+      const tiempo    = issue.timeInProgress ? `⏳ ${issue.timeInProgress}` : "—";
+      return `| ${issue.key} | ${resumen} | ${asignado} | ${tiempo} |`;
+    }).join("\n") +
+    "\n\n"
+  );
+
   interface IssuePickItem extends vscode.QuickPickItem {
     issueKey: string;
   }
 
   const items: IssuePickItem[] = issues.map((issue) => {
-    const timeLabel    = issue.timeInProgress ? `⏳ ${issue.timeInProgress}` : "—";
-    const assigneeLabel = issue.assignee ? `👤 ${issue.assignee}` : "👤 Sin asignar";
+    const timeLabel     = issue.timeInProgress ? `⏳ ${issue.timeInProgress}` : "—";
+    const assigneeLabel = issue.assignee ? `👤 ${firstNameOnly(issue.assignee)}` : "👤 Sin asignar";
 
     return {
       label:       `$(issue-opened) ${issue.key}`,
-      description: `${issue.priority} · ${assigneeLabel} · ${timeLabel}`,
+      description: `${assigneeLabel} · ${timeLabel}`,
       detail:      issue.summary,
       issueKey:    issue.key,
     };
@@ -178,17 +234,27 @@ async function showIssueDetail(issueKey: string, stream: vscode.ChatResponseStre
 
   // Subtasks table
   if (issue.subtasks.length > 0) {
-    stream.markdown(`### Subtareas (${issue.subtasks.length})\n\n`);
-    stream.markdown(
-      `| Clave | Resumen | Estado | Prioridad | Tiempo abierto |\n` +
-      `|---|---|---|---|---|\n`
-    );
-    for (const st of issue.subtasks) {
+    const threshold    = getSubtaskAgeThreshold();
+    const criticalKeys = issue.subtasks.filter((st) => isOverThreshold(st.createdRaw, threshold)).map((st) => st.key);
+
+    if (criticalKeys.length > 0) {
       stream.markdown(
-        `| ${st.key} | ${st.summary} | ${st.status} | ${st.priority} | 📅 ${st.timeOpen} |\n`
+        `> 🚨 **${criticalKeys.length} subtarea(s) crítica(s)** con más de **${threshold} día(s)** abiertas: ` +
+        criticalKeys.join(", ") + `\n\n`
       );
     }
-    stream.markdown("\n");
+
+    stream.markdown(
+      `### Subtareas (${issue.subtasks.length})\n\n` +
+      `| Clave | Resumen | Estado | Tiempo abierto |\n` +
+      `|---|---|---|---|\n` +
+      issue.subtasks.map((st) => {
+        const critical = isOverThreshold(st.createdRaw, threshold);
+        const timeCell = critical ? `🚨 **${st.timeOpen}** ← CRÍTICA` : `📅 ${st.timeOpen}`;
+        return `| ${st.key} | ${truncateWords(st.summary, 10)} | ${st.status} | ${timeCell} |`;
+      }).join("\n") +
+      "\n\n"
+    );
   } else {
     stream.markdown(`_Esta issue no tiene subtareas._\n\n`);
   }
@@ -219,16 +285,27 @@ async function listSubtasks(issueKey: string, stream: vscode.ChatResponseStream)
     return;
   }
 
-  stream.markdown(`## 🔗 Subtareas de ${issueKey} (${subtasks.length})\n\n`);
-  stream.markdown(
-    `| Clave | Resumen | Estado | Prioridad | Tiempo abierto |\n` +
-    `|---|---|---|---|---|\n`
-  );
-  for (const st of subtasks) {
+  const threshold    = getSubtaskAgeThreshold();
+  const criticalKeys = subtasks.filter((st) => isOverThreshold(st.createdRaw, threshold)).map((st) => st.key);
+
+  if (criticalKeys.length > 0) {
     stream.markdown(
-      `| ${st.key} | ${st.summary} | ${st.status} | ${st.priority} | 📅 ${st.timeOpen} |\n`
+      `> 🚨 **${criticalKeys.length} subtarea(s) crítica(s)** llevan más de **${threshold} día(s)** abiertas: ` +
+      criticalKeys.join(", ") + `\n\n`
     );
   }
+
+  stream.markdown(
+    `## 🔗 Subtareas de ${issueKey} (${subtasks.length})\n\n` +
+    `| Clave | Resumen | Estado | Tiempo abierto |\n` +
+    `|---|---|---|---|\n` +
+    subtasks.map((st) => {
+      const critical  = isOverThreshold(st.createdRaw, threshold);
+      const timeCell  = critical ? `🚨 **${st.timeOpen}** ← CRÍTICA` : `📅 ${st.timeOpen}`;
+      return `| ${st.key} | ${truncateWords(st.summary, 10)} | ${st.status} | ${timeCell} |`;
+    }).join("\n") +
+    "\n"
+  );
 
   log(`[JiraHandler] Subtasks listed for ${issueKey}: ${subtasks.length}`);
 }
@@ -305,4 +382,254 @@ async function createSubtaskInteractive(parentKey: string, stream: vscode.ChatRe
   );
 
   log(`[JiraHandler] Subtask created: ${newKey} under ${parentKey}`);
+}
+
+/**
+ * Interactive flow to update the documentation of a Jira issue.
+ * Options: description, summary, add comment, or edit existing comment.
+ */
+async function updateDocumentationInteractive(
+  issueKey: string,
+  stream: vscode.ChatResponseStream
+): Promise<void> {
+  stream.progress(`Cargando issue ${issueKey}…`);
+
+  const client = new JiraClient();
+  let issue: JiraIssue;
+  try {
+    issue = await client.getIssue(issueKey);
+  } catch (err: unknown) {
+    logError(`[JiraHandler] Failed to fetch issue ${issueKey} for update`, err);
+    const msg = err instanceof Error ? err.message : String(err);
+    stream.markdown(`❌ No pude cargar la issue **${issueKey}**: ${msg}`);
+    return;
+  }
+
+  stream.markdown(
+    `## ✏️ Actualizar documentación: **${issueKey}**\n\n` +
+    `> ${issue.summary}\n\n` +
+    `_Selecciona qué deseas actualizar en el cuadro de opciones._\n\n`
+  );
+
+  interface UpdateOption extends vscode.QuickPickItem {
+    action: string;
+  }
+
+  const options: UpdateOption[] = [
+    {
+      label:       "$(edit) Descripción",
+      description: "Actualizar el cuerpo de descripción de la issue",
+      action:      "description",
+    },
+    {
+      label:       "$(pencil) Resumen (título)",
+      description: "Cambiar el título principal de la issue",
+      action:      "summary",
+    },
+    {
+      label:       "$(comment) Agregar comentario",
+      description: "Añadir un nuevo comentario a la issue",
+      action:      "add-comment",
+    },
+    {
+      label:       "$(sync) Editar comentario existente",
+      description: "Seleccionar y modificar un comentario anterior",
+      action:      "edit-comment",
+    },
+  ];
+
+  const picked = await vscode.window.showQuickPick(options, {
+    title:       `¿Qué deseas actualizar en ${issueKey}?`,
+    placeHolder: "Selecciona una opción…",
+  });
+
+  if (!picked) {
+    stream.markdown("Actualización cancelada.");
+    return;
+  }
+
+  const config  = vscode.workspace.getConfiguration("companyStandards");
+  const jiraUrl = (config.get<string>("jiraUrl") ?? "").replace(/\/$/, "");
+
+  // ── Descripción ────────────────────────────────────────────────────────────
+  if (picked.action === "description") {
+    stream.markdown(
+      `### Descripción actual\n\n` +
+      (issue.description ? issue.description : "_Sin descripción._") +
+      `\n\n_Se abrirá un cuadro para editar la descripción._\n\n`
+    );
+
+    const newDesc = await vscode.window.showInputBox({
+      title:       `Actualizar descripción de ${issueKey}`,
+      prompt:      "Nueva descripción (texto plano; usa doble Enter para separar párrafos)",
+      value:       issue.description,
+      validateInput: (v) => (!v?.trim() ? "La descripción no puede estar vacía" : undefined),
+    });
+
+    if (!newDesc || !newDesc.trim()) {
+      stream.markdown("Actualización cancelada.");
+      return;
+    }
+
+    stream.progress(`Actualizando descripción de ${issueKey}…`);
+    try {
+      await client.updateIssue(issueKey, { description: newDesc.trim() });
+    } catch (err: unknown) {
+      logError(`[JiraHandler] Failed to update description of ${issueKey}`, err);
+      const msg = err instanceof Error ? err.message : String(err);
+      stream.markdown(`❌ Error al actualizar la descripción: **${msg}**`);
+      return;
+    }
+
+    stream.markdown(
+      `## ✅ Descripción actualizada\n\n` +
+      `**Issue:** ${issueKey}\n\n` +
+      `🔗 [Ver ${issueKey} en Jira](${jiraUrl}/browse/${issueKey})`
+    );
+    log(`[JiraHandler] Description updated for ${issueKey}`);
+  }
+
+  // ── Resumen (título) ───────────────────────────────────────────────────────
+  else if (picked.action === "summary") {
+    const newSummary = await vscode.window.showInputBox({
+      title:       `Actualizar resumen de ${issueKey}`,
+      prompt:      "Nuevo resumen (título de la issue)",
+      value:       issue.summary,
+      validateInput: (v) => (!v?.trim() ? "El resumen no puede estar vacío" : undefined),
+    });
+
+    if (!newSummary || !newSummary.trim()) {
+      stream.markdown("Actualización cancelada.");
+      return;
+    }
+
+    stream.progress(`Actualizando resumen de ${issueKey}…`);
+    try {
+      await client.updateIssue(issueKey, { summary: newSummary.trim() });
+    } catch (err: unknown) {
+      logError(`[JiraHandler] Failed to update summary of ${issueKey}`, err);
+      const msg = err instanceof Error ? err.message : String(err);
+      stream.markdown(`❌ Error al actualizar el resumen: **${msg}**`);
+      return;
+    }
+
+    stream.markdown(
+      `## ✅ Resumen actualizado\n\n` +
+      `| Campo | Valor |\n|---|---|\n` +
+      `| **Issue** | ${issueKey} |\n` +
+      `| **Nuevo resumen** | ${newSummary.trim()} |\n\n` +
+      `🔗 [Ver ${issueKey} en Jira](${jiraUrl}/browse/${issueKey})`
+    );
+    log(`[JiraHandler] Summary updated for ${issueKey}`);
+  }
+
+  // ── Agregar comentario ─────────────────────────────────────────────────────
+  else if (picked.action === "add-comment") {
+    const comment = await vscode.window.showInputBox({
+      title:       `Agregar comentario en ${issueKey}`,
+      prompt:      "Escribe tu comentario",
+      placeHolder: "Ej: Se implementó la validación usando el patrón AAA...",
+      validateInput: (v) => (!v?.trim() ? "El comentario no puede estar vacío" : undefined),
+    });
+
+    if (!comment || !comment.trim()) {
+      stream.markdown("Operación cancelada.");
+      return;
+    }
+
+    stream.progress(`Agregando comentario en ${issueKey}…`);
+    let commentId: string;
+    try {
+      commentId = await client.addComment(issueKey, comment.trim());
+    } catch (err: unknown) {
+      logError(`[JiraHandler] Failed to add comment to ${issueKey}`, err);
+      const msg = err instanceof Error ? err.message : String(err);
+      stream.markdown(`❌ Error al agregar el comentario: **${msg}**`);
+      return;
+    }
+
+    stream.markdown(
+      `## ✅ Comentario agregado\n\n` +
+      `| Campo | Valor |\n|---|---|\n` +
+      `| **Issue** | ${issueKey} |\n` +
+      `| **ID del comentario** | ${commentId} |\n\n` +
+      `🔗 [Ver ${issueKey} en Jira](${jiraUrl}/browse/${issueKey})`
+    );
+    log(`[JiraHandler] Comment added to ${issueKey}: id ${commentId}`);
+  }
+
+  // ── Editar comentario existente ────────────────────────────────────────────
+  else if (picked.action === "edit-comment") {
+    stream.progress(`Cargando comentarios de ${issueKey}…`);
+
+    let comments: JiraComment[];
+    try {
+      comments = await client.listComments(issueKey);
+    } catch (err: unknown) {
+      logError(`[JiraHandler] Failed to list comments for ${issueKey}`, err);
+      const msg = err instanceof Error ? err.message : String(err);
+      stream.markdown(`❌ No pude cargar los comentarios de **${issueKey}**: ${msg}`);
+      return;
+    }
+
+    if (comments.length === 0) {
+      stream.markdown(`ℹ️ La issue **${issueKey}** no tiene comentarios todavía.`);
+      return;
+    }
+
+    interface CommentPickItem extends vscode.QuickPickItem {
+      commentId: string;
+      currentBody: string;
+    }
+
+    const commentItems: CommentPickItem[] = comments.map((c) => ({
+      label:       `$(comment) ${c.author}`,
+      description: `hace ${c.timeAgo}`,
+      detail:      c.body.length > 120 ? c.body.slice(0, 120) + "…" : c.body,
+      commentId:   c.id,
+      currentBody: c.body,
+    }));
+
+    const pickedComment = await vscode.window.showQuickPick(commentItems, {
+      title:         `Selecciona el comentario a editar (${issueKey})`,
+      placeHolder:   "Escribe para filtrar…",
+      matchOnDetail: true,
+    });
+
+    if (!pickedComment) {
+      stream.markdown("Edición cancelada.");
+      return;
+    }
+
+    const updatedBody = await vscode.window.showInputBox({
+      title:       `Editar comentario en ${issueKey}`,
+      prompt:      "Nuevo contenido del comentario",
+      value:       pickedComment.currentBody,
+      validateInput: (v) => (!v?.trim() ? "El comentario no puede estar vacío" : undefined),
+    });
+
+    if (!updatedBody || !updatedBody.trim()) {
+      stream.markdown("Edición cancelada.");
+      return;
+    }
+
+    stream.progress(`Actualizando comentario en ${issueKey}…`);
+    try {
+      await client.updateComment(issueKey, pickedComment.commentId, updatedBody.trim());
+    } catch (err: unknown) {
+      logError(`[JiraHandler] Failed to update comment ${pickedComment.commentId} in ${issueKey}`, err);
+      const msg = err instanceof Error ? err.message : String(err);
+      stream.markdown(`❌ Error al actualizar el comentario: **${msg}**`);
+      return;
+    }
+
+    stream.markdown(
+      `## ✅ Comentario actualizado\n\n` +
+      `| Campo | Valor |\n|---|---|\n` +
+      `| **Issue** | ${issueKey} |\n` +
+      `| **Autor original** | ${pickedComment.label.replace("$(comment) ", "")} |\n\n` +
+      `🔗 [Ver ${issueKey} en Jira](${jiraUrl}/browse/${issueKey})`
+    );
+    log(`[JiraHandler] Comment ${pickedComment.commentId} updated in ${issueKey}`);
+  }
 }

@@ -9,8 +9,8 @@ export interface JiraIssueSummary {
   summary: string;
   status: string;
   priority: string;
-  project: string;
   assignee: string | null;
+  project: string;
   timeInProgress: string | null;
   created: string;
   statusChangedDate: string | null;
@@ -22,6 +22,8 @@ export interface JiraSubtask {
   status: string;
   priority: string;
   timeOpen: string;
+  /** Raw ISO creation date — used for age-threshold comparisons */
+  createdRaw: string | null;
 }
 
 export interface JiraIssue {
@@ -36,6 +38,15 @@ export interface JiraIssue {
   timeOpen: string;
   timeInProgress: string | null;
   created: string;
+}
+
+export interface JiraComment {
+  id: string;
+  author: string;
+  body: string;
+  created: string;
+  updated: string;
+  timeAgo: string;
 }
 
 // ─── Atlassian Document Format (ADF) types ───────────────────────────────────
@@ -94,7 +105,7 @@ export class JiraClient {
 
   /**
    * Lists open issues across one or more Jira projects.
-   * Includes time-open and time-in-progress metrics.
+   * Only returns In Progress issues of standard issue types.
    */
   async listIssues(projectKeys: string[], maxResults = 30): Promise<JiraIssueSummary[]> {
     this.validateConfig();
@@ -133,8 +144,8 @@ export class JiraClient {
           summary:          String(fields["summary"] ?? ""),
           status:           statusName,
           priority:         String(priority?.["name"] ?? ""),
-          project:          String(project?.["key"] ?? ""),
           assignee:         assignee ? String(assignee["displayName"] ?? assignee["emailAddress"] ?? "") : null,
+          project:          String(project?.["key"] ?? ""),
           timeInProgress:   this.formatAge(statusChangedDate),
           created,
           statusChangedDate,
@@ -188,11 +199,12 @@ export class JiraClient {
         const stPriority = stFields["priority"] as Record<string, unknown> | undefined;
         const stCreated  = typeof stFields["created"] === "string" ? stFields["created"] : null;
         return {
-          key:      String(st["key"]),
-          summary:  String(stFields["summary"] ?? ""),
-          status:   String(stStatus?.["name"] ?? ""),
-          priority: String(stPriority?.["name"] ?? ""),
-          timeOpen: this.formatAge(stCreated) ?? "—",
+          key:        String(st["key"]),
+          summary:    String(stFields["summary"] ?? ""),
+          status:     String(stStatus?.["name"] ?? ""),
+          priority:   String(stPriority?.["name"] ?? ""),
+          timeOpen:   this.formatAge(stCreated) ?? "—",
+          createdRaw: stCreated,
         };
       });
 
@@ -250,6 +262,128 @@ export class JiraClient {
     } catch (err) {
       throw this.wrapError(err, url);
     }
+  }
+
+  // ─── Documentation update methods ─────────────────────────────────────────
+
+  /**
+   * Updates fields on an existing Jira issue.
+   * Supports updating summary (string) and description (plain text → ADF).
+   */
+  async updateIssue(issueKey: string, fields: { summary?: string; description?: string }): Promise<void> {
+    this.validateConfig();
+    const url = `${this.baseUrl}/rest/api/3/issue/${issueKey}`;
+    log(`[JiraClient] PUT updateIssue → ${url} | fields: ${Object.keys(fields).join(", ")}`);
+
+    const body: Record<string, unknown> = {};
+    if (fields.summary !== undefined)     body["summary"]     = fields.summary;
+    if (fields.description !== undefined) body["description"] = this.textToAdf(fields.description);
+
+    try {
+      await axios.put(
+        url,
+        { fields: body },
+        { headers: { ...this.headers(), "Content-Type": "application/json" } }
+      );
+      log(`[JiraClient] ← 204 updateIssue OK`);
+    } catch (err) {
+      throw this.wrapError(err, url);
+    }
+  }
+
+  /**
+   * Adds a new comment to a Jira issue.
+   * Returns the id of the created comment.
+   */
+  async addComment(issueKey: string, text: string): Promise<string> {
+    this.validateConfig();
+    const url = `${this.baseUrl}/rest/api/3/issue/${issueKey}/comment`;
+    log(`[JiraClient] POST addComment → ${url}`);
+
+    try {
+      const res = await axios.post(
+        url,
+        { body: this.textToAdf(text) },
+        { headers: { ...this.headers(), "Content-Type": "application/json" } }
+      );
+      log(`[JiraClient] ← ${res.status} | comment id: ${res.data.id}`);
+      return String(res.data.id);
+    } catch (err) {
+      throw this.wrapError(err, url);
+    }
+  }
+
+  /**
+   * Returns all comments on a Jira issue, newest first.
+   */
+  async listComments(issueKey: string): Promise<JiraComment[]> {
+    this.validateConfig();
+    const url = `${this.baseUrl}/rest/api/3/issue/${issueKey}/comment`;
+    log(`[JiraClient] GET listComments → ${url}`);
+
+    try {
+      const res = await axios.get(url, {
+        headers: this.headers(),
+        params: { orderBy: "-created", maxResults: 50 },
+      });
+      log(`[JiraClient] ← ${res.status} | ${res.data.comments?.length ?? 0} comments`);
+
+      return (res.data.comments ?? []).map((c: Record<string, unknown>) => {
+        const author  = (c["author"] ?? {}) as Record<string, unknown>;
+        const created = String(c["created"] ?? "");
+        const updated = String(c["updated"] ?? "");
+        return {
+          id:      String(c["id"]),
+          author:  String(author["displayName"] ?? author["emailAddress"] ?? "Unknown"),
+          body:    this.adfToText(c["body"]),
+          created,
+          updated,
+          timeAgo: this.formatAge(created) ?? "—",
+        };
+      });
+    } catch (err) {
+      throw this.wrapError(err, url);
+    }
+  }
+
+  /**
+   * Updates an existing comment on a Jira issue.
+   */
+  async updateComment(issueKey: string, commentId: string, text: string): Promise<void> {
+    this.validateConfig();
+    const url = `${this.baseUrl}/rest/api/3/issue/${issueKey}/comment/${commentId}`;
+    log(`[JiraClient] PUT updateComment → ${url}`);
+
+    try {
+      await axios.put(
+        url,
+        { body: this.textToAdf(text) },
+        { headers: { ...this.headers(), "Content-Type": "application/json" } }
+      );
+      log(`[JiraClient] ← 200 updateComment OK`);
+    } catch (err) {
+      throw this.wrapError(err, url);
+    }
+  }
+
+  // ─── Text → ADF conversion ─────────────────────────────────────────────────
+
+  private textToAdf(text: string): AdfDoc {
+    const paragraphs = text.split(/\n{2,}/);
+    return {
+      version: 1,
+      type: "doc",
+      content: paragraphs
+        .filter((p) => p.trim())
+        .map((p) => ({
+          type: "paragraph",
+          content: p.split("\n").flatMap((line, i, arr): AdfNode[] =>
+            i < arr.length - 1
+              ? [{ type: "text", text: line }, { type: "hardBreak" }]
+              : [{ type: "text", text: line }]
+          ),
+        })),
+    };
   }
 
   // ─── Time helpers ──────────────────────────────────────────────────────────
