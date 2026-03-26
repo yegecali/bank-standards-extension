@@ -2,7 +2,7 @@
   "name": "company-coding-standard",
   "displayName": "Company Coding Standard",
   "description": "Define and enforce your company's development standards directly in VSCode — powered by your own knowledge base (Notion or Confluence). Naming conventions, test standards, project scaffolding, prompt library, Jira integration, and AI agent.",
-  "version": "0.0.31",
+  "version": "0.0.32",
   "publisher": "yemicanchari",
   "preview": true,
   "license": "MIT",
@@ -43,6 +43,10 @@
         "isSticky": true,
         "icon": "images/company-agent.svg",
         "commands": [
+          {
+            "name": "help",
+            "description": "Muestra todos los comandos disponibles y cómo usar la extensión"
+          },
           {
             "name": "standards",
             "description": "Consulta las convenciones de nomenclatura del banco"

@@ -117,6 +117,95 @@ export function registerBankAgent(context: vscode.ExtensionContext): void {
   log("[BankAgent] Chat participant registered");
 }
 
+// ─── Help text ───────────────────────────────────────────────────────────────
+
+const HELP_TEXT = `
+# 📖 Company Coding Standard — Ayuda
+
+Soy tu agente de estándares de desarrollo. Te ayudo a escribir código correcto, entender el proyecto y gestionar tus tareas.
+
+---
+
+## 🚀 Primeros pasos
+
+| Comando | Cuándo usarlo |
+|---|---|
+| \`@company /onboarding\` | Eres nuevo en el equipo — guía completa del primer día |
+| \`@company /setup <guía>\` | Configurar tu ambiente de desarrollo (Maven, Docker, etc.) |
+| \`@company /standards\` | Ver las convenciones de nombrado y estándares de la empresa |
+
+---
+
+## 💻 Desarrollo diario
+
+| Comando | Qué hace |
+|---|---|
+| \`@company /review\` | Revisa el archivo activo contra los estándares de la empresa |
+| \`@company /generate-test\` | Genera tests unitarios para el archivo activo (patrón Triple AAA) |
+| \`@company /docs\` | Genera JSDoc/JavaDoc para el archivo activo |
+| \`@company /commit\` | Sugiere un mensaje de commit basado en tus cambios staged |
+| \`@company /prompts\` | Lista los prompts disponibles en tu base de conocimiento |
+| \`@company /prompts <nombre>\` | Aplica un prompt al archivo activo (ej: \`sonar-vulnerabilidades\`) |
+
+---
+
+## 🏗️ Proyecto
+
+| Comando | Qué hace |
+|---|---|
+| \`@company /create\` | Genera un proyecto nuevo desde tu plantilla (Maven + Quarkus) |
+| \`@company /project\` | Lista las acciones de proyecto disponibles |
+| \`@company /project <acción>\` | Ejecuta una acción sobre el proyecto (ej: \`agrega-redis\`, \`agrega-client-rest\`) |
+| \`@company /new-feature\` | Flujo guiado: selecciona historia de Jira → planifica → implementa |
+
+---
+
+## 📋 Jira
+
+| Comando | Qué hace |
+|---|---|
+| \`@company /jira\` | Ver issues en progreso (usa JQL configurado o filtro por defecto) |
+| \`@company /jira <texto>\` | Buscar issues por descripción usando IA (ej: \`/jira pagos con Redis\`) |
+| \`@company /jira PROJ-123\` | Ver detalle completo de una issue |
+| \`@company /jira subtasks PROJ-123\` | Ver tus subtareas asignadas (con alarma de edad) |
+| \`@company /jira create PROJ-123\` | Crear una subtarea en una issue |
+| \`@company /jira update PROJ-123\` | Actualizar descripción o agregar comentario |
+
+---
+
+## ⚙️ Configuración mínima requerida
+
+\`\`\`json
+{
+  "companyStandards.knowledgeSource": "notion",
+  "companyStandards.notionToken":     "secret_xxxx",
+  "companyStandards.specialtiesMap": {
+    "backend": {
+      "standards": "<id-de-pagina>",
+      "testing":   "<id-de-pagina>",
+      "project":   "<id-de-pagina>",
+      "prompts":   "<id-de-pagina>"
+    }
+  },
+  "companyStandards.jiraUrl":         "https://tuempresa.atlassian.net",
+  "companyStandards.jiraEmail":       "tu@empresa.com",
+  "companyStandards.jiraToken":       "tu-api-token",
+  "companyStandards.jiraProject":     ["BANK"],
+  "companyStandards.setupPage":       "<id-pagina-setup>",
+  "companyStandards.projectActionsPage": "<id-pagina-acciones>"
+}
+\`\`\`
+
+---
+
+## 💡 Tips
+
+- Escribe \`@company\` + espacio para ver sugerencias de comandos
+- Los comandos \`/review\`, \`/generate-test\` y \`/docs\` usan el archivo que tienes **abierto y activo** en el editor
+- \`/jira <texto libre>\` hace búsqueda semántica con IA sobre todas tus issues
+- Si eres nuevo, empieza con \`@company /onboarding\`
+`.trim();
+
 // ─── Request handler ────────────────────────────────────────────────────────
 
 function makeHandler(context: vscode.ExtensionContext): vscode.ChatRequestHandler {
@@ -131,6 +220,12 @@ function makeHandler(context: vscode.ExtensionContext): vscode.ChatRequestHandle
     log(`[BankAgent] command : "${request.command ?? "(none)"}"`);
     log(`[BankAgent] prompt  : "${userPrompt.slice(0, 120)}${userPrompt.length > 120 ? "…" : ""}"`);
     log(`[BankAgent] model   : ${request.model?.id ?? "(unknown)"}`);
+
+    // 0 — Handle /help command
+    if (request.command === "help") {
+      stream.markdown(HELP_TEXT);
+      return { metadata: { intent: "help" } };
+    }
 
     // 0 — Handle /specialty command
     if (request.command === "specialty") {
