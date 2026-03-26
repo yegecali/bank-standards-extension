@@ -79,21 +79,30 @@ export async function handleJiraCommand(
 
 // ─── Formatting helpers ───────────────────────────────────────────────────────
 
-/** Reads the subtask age threshold (in days) from settings. Default: 3. */
-function getSubtaskAgeThreshold(): number {
+/**
+ * Reads the subtask age alarm threshold in hours from settings.
+ * Falls back to subtaskAgeThresholdDays * 24 for backward compatibility.
+ * Default: 72 hours (3 days).
+ */
+function getSubtaskAgeThresholdHours(): number {
   const config = vscode.workspace.getConfiguration("companyStandards");
-  return config.get<number>("subtaskAgeThresholdDays") ?? 3;
+  const hours = config.get<number>("subtaskAgeThresholdHours");
+  if (hours !== undefined && hours !== null) { return hours; }
+  // backward compat: if only days was set, convert
+  const days = config.get<number>("subtaskAgeThresholdDays");
+  if (days !== undefined && days !== null) { return days * 24; }
+  return 72;
 }
 
 /**
- * Returns true if the subtask was created more than `thresholdDays` days ago.
- * Returns false if `createdRaw` is null/invalid (cannot determine age).
+ * Returns true if the subtask was created more than `thresholdHours` hours ago.
+ * Returns false if `createdRaw` is null/invalid.
  */
-function isOverThreshold(createdRaw: string | null | undefined, thresholdDays: number): boolean {
-  if (!createdRaw) return false;
+function isOverThreshold(createdRaw: string | null | undefined, thresholdHours: number): boolean {
+  if (!createdRaw) { return false; }
   const ms = Date.now() - new Date(createdRaw).getTime();
-  if (isNaN(ms) || ms < 0) return false;
-  return ms / 86_400_000 > thresholdDays;
+  if (isNaN(ms) || ms < 0) { return false; }
+  return ms / 3_600_000 > thresholdHours;
 }
 
 /** Returns the first word of a full name (e.g. "Jose Luis Cacsire" → "Jose") */
@@ -218,12 +227,12 @@ async function showIssueDetail(issueKey: string, stream: vscode.ChatResponseStre
 
   // Subtasks table
   if (issue.subtasks.length > 0) {
-    const threshold    = getSubtaskAgeThreshold();
+    const threshold    = getSubtaskAgeThresholdHours();
     const criticalKeys = issue.subtasks.filter((st) => isOverThreshold(st.createdRaw, threshold)).map((st) => st.key);
 
     if (criticalKeys.length > 0) {
       stream.markdown(
-        `> 🚨 **${criticalKeys.length} subtarea(s) crítica(s)** con más de **${threshold} día(s)** abiertas: ` +
+        `> 🚨 **${criticalKeys.length} subtarea(s) crítica(s)** llevan más de **${threshold}h** abiertas: ` +
         criticalKeys.join(", ") + `\n\n`
       );
     }
@@ -234,7 +243,7 @@ async function showIssueDetail(issueKey: string, stream: vscode.ChatResponseStre
       `|---|---|---|---|\n` +
       issue.subtasks.map((st) => {
         const critical = isOverThreshold(st.createdRaw, threshold);
-        const timeCell = critical ? `🚨 **${st.timeOpen}** ← CRÍTICA` : `📅 ${st.timeOpen}`;
+        const timeCell = critical ? `🚨 **${st.timeOpen}**` : `📅 ${st.timeOpen}`;
         return `| ${st.key} | ${truncateWords(st.summary, 10)} | ${st.status} | ${timeCell} |`;
       }).join("\n") +
       "\n\n"
@@ -269,12 +278,12 @@ async function listSubtasks(issueKey: string, stream: vscode.ChatResponseStream)
     return;
   }
 
-  const threshold    = getSubtaskAgeThreshold();
+  const threshold    = getSubtaskAgeThresholdHours();
   const criticalKeys = subtasks.filter((st) => isOverThreshold(st.createdRaw, threshold)).map((st) => st.key);
 
   if (criticalKeys.length > 0) {
     stream.markdown(
-      `> 🚨 **${criticalKeys.length} subtarea(s) crítica(s)** llevan más de **${threshold} día(s)** abiertas: ` +
+      `> 🚨 **${criticalKeys.length} subtarea(s) crítica(s)** llevan más de **${threshold}h** abiertas: ` +
       criticalKeys.join(", ") + `\n\n`
     );
   }
@@ -285,7 +294,7 @@ async function listSubtasks(issueKey: string, stream: vscode.ChatResponseStream)
     `|---|---|---|---|\n` +
     subtasks.map((st) => {
       const critical = isOverThreshold(st.createdRaw, threshold);
-      const timeCell = critical ? `🚨 **${st.timeOpen}** ← CRÍTICA` : `📅 ${st.timeOpen}`;
+      const timeCell = critical ? `🚨 **${st.timeOpen}**` : `📅 ${st.timeOpen}`;
       return `| ${st.key} | ${truncateWords(st.summary, 10)} | ${st.status} | ${timeCell} |`;
     }).join("\n") +
     "\n"

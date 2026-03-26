@@ -306,12 +306,13 @@ export class JiraClient {
         const assignee  = fields["assignee"] as Record<string, unknown> | null | undefined;
         const created   = typeof fields["created"] === "string" ? fields["created"] : null;
         return {
-          key:      String(issue["key"]),
-          summary:  String(fields["summary"] ?? ""),
-          status:   String(status?.["name"] ?? ""),
-          priority: String(priority?.["name"] ?? ""),
-          assignee: assignee ? String(assignee["displayName"] ?? assignee["emailAddress"] ?? "") : null,
-          timeOpen: this.formatAge(created) ?? "—",
+          key:        String(issue["key"]),
+          summary:    String(fields["summary"] ?? ""),
+          status:     String(status?.["name"] ?? ""),
+          priority:   String(priority?.["name"] ?? ""),
+          assignee:   assignee ? String(assignee["displayName"] ?? assignee["emailAddress"] ?? "") : null,
+          timeOpen:   this.formatAge(created) ?? "—",
+          createdRaw: created,
         };
       });
     } catch (err) {
