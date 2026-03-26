@@ -7,6 +7,7 @@ import { handlePromptsCommand } from "./promptLibraryHandler";
 import { handleNewFeatureCommand } from "./newFeatureHandler";
 import { handleJiraCommand } from "./jiraHandler";
 import { handleProjectCommand } from "./projectActionHandler";
+import { handleOnboardingCommand } from "./onboardingHandler";
 import { isCreateIntent, createProjectFromNotion } from "./projectCreator";
 import { getStagedDiff } from "./gitHelper";
 import { BankPrompt } from "./BankPrompt";
@@ -95,12 +96,13 @@ export function registerBankAgent(context: vscode.ExtensionContext): void {
 
       // Remove the follow-up that matches what was just done
       const intentToCommand: Record<string, string> = {
-        project:    "/create",
-        testing:    "/generate-test",
-        docs:       "/docs",
-        jira:       "/jira",
-        standards:  "/standards",
-        review:     "/review",
+        project:     "/create",
+        testing:     "/generate-test",
+        docs:        "/docs",
+        jira:        "/jira",
+        standards:   "/standards",
+        review:      "/review",
+        onboarding:  "/onboarding",
       };
       const doneCommand = intent ? intentToCommand[intent] : undefined;
 
@@ -132,6 +134,12 @@ function makeHandler(context: vscode.ExtensionContext): vscode.ChatRequestHandle
     // 0 — Handle /specialty command
     if (request.command === "specialty") {
       return handleSpecialtyCommand(userPrompt, stream);
+    }
+
+    // 0a2 — Handle /onboarding command
+    if (request.command === "onboarding") {
+      await handleOnboardingCommand(stream, request.model, token);
+      return { metadata: { intent: "onboarding" } };
     }
 
     // 0b — Handle /jira command (early-exit — Jira issues manager)
