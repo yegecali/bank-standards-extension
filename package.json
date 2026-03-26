@@ -2,7 +2,7 @@
   "name": "company-coding-standard",
   "displayName": "Company Coding Standard",
   "description": "Define and enforce your company's development standards directly in VSCode — powered by your own knowledge base (Notion or Confluence). Naming conventions, test standards, project scaffolding, prompt library, Jira integration, and AI agent.",
-  "version": "0.0.28",
+  "version": "0.0.29",
   "publisher": "yemicanchari",
   "preview": true,
   "license": "MIT",
@@ -87,6 +87,16 @@
             "name": "project",
             "description": "Ejecuta acciones sobre tu proyecto usando prompts del knowledge base. Lee pom.xml, properties y estructura del workspace, genera/modifica archivos. Uso: /project | /project <acción> (ej: /project agrega-redis, /project agrega-client-rest)"
           }
+        ],
+        "sampleRequests": [
+          "Crear nuevo proyecto",
+          "Agregar tests al archivo activo",
+          "Agregar documentación al archivo activo",
+          "Revisar archivo activo contra estándares",
+          "Ver mis subtareas de Jira",
+          "Ver estándares de nomenclatura",
+          "Ver issues en progreso de Jira",
+          "Acciones de proyecto"
         ],
         "disambiguation": [
           {

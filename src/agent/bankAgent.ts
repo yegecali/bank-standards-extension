@@ -48,30 +48,65 @@ export function registerBankAgent(context: vscode.ExtensionContext): void {
       _token: vscode.CancellationToken
     ): vscode.ChatFollowup[] {
       const intent = (result.metadata as ChatResultMetadata | undefined)?.intent;
-      const followups: vscode.ChatFollowup[] = [];
 
-      if (intent !== "testing") {
-        followups.push({
-          prompt: "revisa este archivo contra los estándares",
-          label: "Revisar archivo abierto",
+      // Context-aware: suggest the most relevant next actions based on what was just done
+      const all: vscode.ChatFollowup[] = [
+        {
+          prompt: "/create",
+          label: "$(file-directory) Crear nuevo proyecto",
           participant: PARTICIPANT_ID,
-        });
-      }
-      if (intent !== "project") {
-        followups.push({
-          prompt: "crea un proyecto base con quarkus",
-          label: "Crear proyecto Quarkus",
+        },
+        {
+          prompt: "/generate-test",
+          label: "$(beaker) Agregar tests al archivo activo",
           participant: PARTICIPANT_ID,
-        });
-      }
-      if (intent !== "standards") {
-        followups.push({
-          prompt: "¿qué convenciones de nombres debo usar?",
-          label: "Ver estándares de nomenclatura",
+        },
+        {
+          prompt: "/docs",
+          label: "$(book) Agregar documentación",
           participant: PARTICIPANT_ID,
-        });
-      }
-      return followups;
+        },
+        {
+          prompt: "/jira subtasks",
+          label: "$(list-tree) Ver mis subtareas",
+          participant: PARTICIPANT_ID,
+        },
+        {
+          prompt: "/review",
+          label: "$(search) Revisar archivo activo",
+          participant: PARTICIPANT_ID,
+        },
+        {
+          prompt: "/standards",
+          label: "$(symbol-ruler) Ver estándares de nomenclatura",
+          participant: PARTICIPANT_ID,
+        },
+        {
+          prompt: "/project",
+          label: "$(gear) Acciones de proyecto",
+          participant: PARTICIPANT_ID,
+        },
+        {
+          prompt: "/jira",
+          label: "$(issue-opened) Ver issues en progreso",
+          participant: PARTICIPANT_ID,
+        },
+      ];
+
+      // Remove the follow-up that matches what was just done
+      const intentToCommand: Record<string, string> = {
+        project:    "/create",
+        testing:    "/generate-test",
+        docs:       "/docs",
+        jira:       "/jira",
+        standards:  "/standards",
+        review:     "/review",
+      };
+      const doneCommand = intent ? intentToCommand[intent] : undefined;
+
+      return all
+        .filter((f) => !doneCommand || !f.prompt.startsWith(doneCommand))
+        .slice(0, 4); // show max 4 to keep UI clean
     },
   };
 
