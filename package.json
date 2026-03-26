@@ -2,7 +2,7 @@
   "name": "company-coding-standard",
   "displayName": "Company Coding Standard",
   "description": "Define and enforce your company's development standards directly in VSCode — powered by your own knowledge base (Notion or Confluence). Naming conventions, test standards, project scaffolding, prompt library, Jira integration, and AI agent.",
-  "version": "0.0.30",
+  "version": "0.0.31",
   "publisher": "yemicanchari",
   "preview": true,
   "license": "MIT",
@@ -90,6 +90,10 @@
           {
             "name": "onboarding",
             "description": "Guía interactiva para nuevos developers: estándares de la empresa, arquitectura del proyecto, cómo levantar el ambiente local y tu primera tarea en Jira — todo en un solo flujo."
+          },
+          {
+            "name": "setup",
+            "description": "Genera una guía de setup del ambiente de desarrollo basada en los pasos definidos por tu empresa en el knowledge base. Lee el proyecto real (pom.xml, docker-compose, etc.) y adapta las instrucciones. Uso: /setup | /setup <guía> (ej: /setup maven, /setup docker)"
           }
         ],
         "sampleRequests": [
@@ -451,6 +455,11 @@
           "type": "string",
           "default": "",
           "description": "ID or URL of the Notion/Confluence page that contains the project action prompts used by /project. Each H2 heading defines one action (e.g. ## agrega-redis)."
+        },
+        "companyStandards.setupPage": {
+          "type": "string",
+          "default": "",
+          "description": "ID or URL of the Notion/Confluence page that contains the setup guides used by /setup. Each H2 heading defines one setup guide (e.g. ## maven, ## docker). The body is the company-specific prompt that tells the AI what steps to follow."
         },
         "companyStandards.jiraJql": {
           "type": "string",

@@ -8,6 +8,7 @@ import { handleNewFeatureCommand } from "./newFeatureHandler";
 import { handleJiraCommand } from "./jiraHandler";
 import { handleProjectCommand } from "./projectActionHandler";
 import { handleOnboardingCommand } from "./onboardingHandler";
+import { handleSetupCommand } from "./setupHandler";
 import { isCreateIntent, createProjectFromNotion } from "./projectCreator";
 import { getStagedDiff } from "./gitHelper";
 import { BankPrompt } from "./BankPrompt";
@@ -140,6 +141,45 @@ function makeHandler(context: vscode.ExtensionContext): vscode.ChatRequestHandle
     if (request.command === "onboarding") {
       await handleOnboardingCommand(stream, request.model, token);
       return { metadata: { intent: "onboarding" } };
+    }
+
+    // 0a3 — Handle /setup command
+    if (request.command === "setup") {
+      const config    = vscode.workspace.getConfiguration("companyStandards");
+      const setupPage = (config.get<string>("setupPage") ?? "").trim();
+
+      if (!setupPage) {
+        stream.markdown(
+          `⚠️ Configura \`companyStandards.setupPage\` con el ID o URL de la página de Notion/Confluence ` +
+          `que contiene tus guías de setup.\n\n` +
+          `Cada encabezado H2 define una guía. Ejemplo:\n\n` +
+          "```markdown\n" +
+          `## maven\n` +
+          `Antes de compilar el proyecto Maven necesitas:\n` +
+          `1. Descargar los certificados corporativos.\n` +
+          `2. Importarlos al cacert de Java con keytool.\n` +
+          `3. Configurar el settings.xml de Maven.\n` +
+          `4. Ejecutar mvn clean install.\n\n` +
+          `## docker\n` +
+          `Para levantar con Docker Compose...\n` +
+          "```"
+        );
+        return { metadata: { intent: "setup" } };
+      }
+
+      stream.progress("Cargando guías de setup…");
+      try {
+        const provider  = createKnowledgeProvider();
+        const page      = await provider.getPage(setupPage);
+        const templates = parsePromptLibrary(page.blocks);
+        log(`[BankAgent] /setup — ${templates.length} guides from "${setupPage}"`);
+        await handleSetupCommand(userPrompt, templates, stream, request.model, token, page.title);
+      } catch (err: unknown) {
+        logError("[BankAgent] /setup — failed to load setup page", err);
+        const msg = err instanceof Error ? err.message : String(err);
+        stream.markdown(`❌ No pude cargar la página de setup: **${msg}**`);
+      }
+      return { metadata: { intent: "setup" } };
     }
 
     // 0b — Handle /jira command (early-exit — Jira issues manager)
