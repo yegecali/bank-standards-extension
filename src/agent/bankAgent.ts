@@ -101,7 +101,7 @@ function makeHandler(context: vscode.ExtensionContext): vscode.ChatRequestHandle
 
     // 0b — Handle /jira command (early-exit — Jira issues manager)
     if (request.command === "jira") {
-      await handleJiraCommand(userPrompt, stream, context, token);
+      await handleJiraCommand(userPrompt, stream, context, token, request.model);
       return { metadata: { intent: "jira" } };
     }
 

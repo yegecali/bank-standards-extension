@@ -16,6 +16,7 @@ const USAGE_HELP =
   `ℹ️ **Uso de \`/jira\`:**\n\n` +
   `| Comando | Acción |\n|---|---|\n` +
   `| \`/jira\` | Listar issues en progreso de los proyectos configurados |\n` +
+  `| \`/jira <texto>\` | Buscar issues por descripción usando IA (ej: \`/jira implementar redis\`) |\n` +
   `| \`/jira PROJ-123\` | Ver detalle de una issue |\n` +
   `| \`/jira subtasks PROJ-123\` | Listar mis subtareas asignadas en una issue |\n` +
   `| \`/jira update PROJ-123\` | Actualizar documentación (descripción, comentarios) |\n` +
@@ -29,7 +30,8 @@ export async function handleJiraCommand(
   userArg: string,
   stream: vscode.ChatResponseStream,
   _context: vscode.ExtensionContext,
-  _token: vscode.CancellationToken
+  token: vscode.CancellationToken,
+  model?: vscode.LanguageModelChat
 ): Promise<void> {
   const config = vscode.workspace.getConfiguration("companyStandards");
   const jiraUrl   = config.get<string>("jiraUrl") ?? "";
@@ -71,6 +73,19 @@ export async function handleJiraCommand(
   const updateMatch = arg.match(/^update\s+([A-Z][A-Z0-9]+-\d+)$/i);
   if (updateMatch) {
     await updateDocumentationInteractive(updateMatch[1].toUpperCase(), stream);
+    return;
+  }
+
+  // Page navigation: "more <cacheKey> <page>"
+  const moreMatch = arg.match(/^more\s+(\S+)\s+(\d+)$/i);
+  if (moreMatch) {
+    await showSearchPage(moreMatch[1], parseInt(moreMatch[2], 10), stream);
+    return;
+  }
+
+  // Any other text → semantic search via LLM
+  if (model) {
+    await handleJiraSearch(arg, stream, model, token);
     return;
   }
 
@@ -625,4 +640,192 @@ async function updateDocumentationInteractive(
     );
     log(`[JiraHandler] Comment ${pickedComment.commentId} updated in ${issueKey}`);
   }
+}
+
+// ─── Semantic Search ──────────────────────────────────────────────────────────
+
+/** In-memory cache: cacheKey → ordered list of matched issues */
+const searchCache = new Map<string, JiraIssueSummary[]>();
+
+const PAGE_SIZE = 8;
+
+/**
+ * Fetches all issues, asks the LLM to rank them by relevance to `query`,
+ * then shows the first PAGE_SIZE results with pagination.
+ */
+async function handleJiraSearch(
+  query: string,
+  stream: vscode.ChatResponseStream,
+  model: vscode.LanguageModelChat,
+  token: vscode.CancellationToken
+): Promise<void> {
+  stream.progress(`Buscando issues relacionadas con "${query}"…`);
+  log(`[JiraHandler] Search query: "${query}"`);
+
+  // 1 — Fetch all issues
+  const config    = vscode.workspace.getConfiguration("companyStandards");
+  const customJql = (config.get<string>("jiraJql") ?? "").trim();
+  const client    = new JiraClient();
+  let allIssues: JiraIssueSummary[];
+
+  try {
+    allIssues = customJql
+      ? await client.searchByJql(customJql, 100)
+      : await client.listIssues(getConfiguredProjects(), 100);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    stream.markdown(`❌ Error consultando Jira: **${msg}**`);
+    return;
+  }
+
+  if (allIssues.length === 0) {
+    stream.markdown(`ℹ️ No hay issues para buscar.`);
+    return;
+  }
+
+  // 2 — Ask LLM to rank by relevance
+  stream.progress(`Analizando ${allIssues.length} issues con IA…`);
+  const resolvedModel = await resolveModel(model, stream);
+  if (!resolvedModel) { return; }
+
+  const issueList = allIssues.map((i) =>
+    `${i.key}: ${i.summary}${i.assignee ? ` [${firstNameOnly(i.assignee)}]` : ""}`
+  ).join("\n");
+
+  const rankMsg = vscode.LanguageModelChatMessage.User(
+    `Tienes esta lista de issues de Jira:\n\n${issueList}\n\n` +
+    `El usuario busca: "${query}"\n\n` +
+    `Responde ÚNICAMENTE con las claves de las issues más relevantes, ` +
+    `ordenadas de mayor a menor relevancia, separadas por comas. ` +
+    `Si ninguna es relevante responde "NONE". ` +
+    `Ejemplo de respuesta válida: BANK-42, BANK-15, BANK-7`
+  );
+
+  let rankResponse = "";
+  try {
+    const res = await resolvedModel.sendRequest([rankMsg], {}, token);
+    for await (const chunk of res.text) { rankResponse += chunk; }
+  } catch (err: unknown) {
+    logError("[JiraHandler] LLM ranking error", err);
+    // Fallback: show all issues unranked
+    rankResponse = allIssues.map((i) => i.key).join(", ");
+  }
+
+  log(`[JiraHandler] LLM ranking response: "${rankResponse}"`);
+
+  if (rankResponse.trim().toUpperCase() === "NONE") {
+    stream.markdown(`ℹ️ No encontré issues relacionadas con **"${query}"**.`);
+    return;
+  }
+
+  // 3 — Build ordered result list
+  const rankedKeys  = rankResponse.split(",").map((k) => k.trim().toUpperCase()).filter(Boolean);
+  const keyIndex    = new Map(rankedKeys.map((k, i) => [k, i]));
+  const issueMap    = new Map(allIssues.map((i) => [i.key, i]));
+
+  const ranked = rankedKeys
+    .map((k) => issueMap.get(k))
+    .filter((i): i is JiraIssueSummary => i !== undefined);
+
+  // Include unranked issues at the end (LLM may not have returned all)
+  for (const issue of allIssues) {
+    if (!keyIndex.has(issue.key)) { ranked.push(issue); }
+  }
+
+  // 4 — Cache and show first page
+  const cacheKey = Buffer.from(query + Date.now()).toString("base64").slice(0, 12);
+  searchCache.set(cacheKey, ranked);
+
+  // Auto-cleanup after 10 min
+  setTimeout(() => searchCache.delete(cacheKey), 10 * 60 * 1000);
+
+  await renderSearchPage(ranked, 0, cacheKey, query, stream);
+}
+
+/**
+ * Shows a paginated page of search results.
+ * Called on "Ver más" → `@company /jira more <cacheKey> <page>`
+ */
+async function showSearchPage(
+  cacheKey: string,
+  page: number,
+  stream: vscode.ChatResponseStream
+): Promise<void> {
+  const ranked = searchCache.get(cacheKey);
+  if (!ranked) {
+    stream.markdown(
+      `⚠️ La búsqueda expiró (10 min). Ejecuta la búsqueda de nuevo.`
+    );
+    return;
+  }
+  await renderSearchPage(ranked, page, cacheKey, "", stream);
+}
+
+function renderSearchPage(
+  ranked: JiraIssueSummary[],
+  page: number,
+  cacheKey: string,
+  query: string,
+  stream: vscode.ChatResponseStream
+): void {
+  const start    = page * PAGE_SIZE;
+  const pageItems = ranked.slice(start, start + PAGE_SIZE);
+  const total    = ranked.length;
+  const remaining = total - start - pageItems.length;
+
+  const heading = query
+    ? `🔍 Resultados para "${query}" — ${total} encontradas (página ${page + 1})`
+    : `🔍 Resultados — página ${page + 1}`;
+
+  stream.markdown(`## ${heading}\n\n`);
+  stream.markdown(
+    `| Clave | Resumen | Asignado a | Tiempo en progreso |\n` +
+    `|---|---|---|---|\n`
+  );
+  for (const issue of pageItems) {
+    const timeLabel     = issue.timeInProgress ? `⏳ ${issue.timeInProgress}` : "—";
+    const assigneeLabel = issue.assignee ? firstNameOnly(issue.assignee) : "Sin asignar";
+    stream.markdown(
+      `| ${issue.key} | ${truncateWords(issue.summary, 10)} | ${assigneeLabel} | ${timeLabel} |\n`
+    );
+  }
+
+  if (remaining > 0) {
+    const nextPage = page + 1;
+    stream.markdown(
+      `\n_Mostrando ${start + 1}–${start + pageItems.length} de **${total}** issues._\n\n` +
+      `> Para ver las siguientes ${Math.min(PAGE_SIZE, remaining)} escribe:\n` +
+      `> \`@company /jira more ${cacheKey} ${nextPage}\``
+    );
+    stream.button({
+      title:   `Ver más (${remaining} restantes)`,
+      command: "vscode.openIssueSearch",
+      // Note: button will show but user needs to type the command above manually
+      // since vscode.chat.sendChatRequest is not available in extensions
+    });
+  } else {
+    stream.markdown(`\n_Se mostraron todos los resultados (**${total}** issues)._`);
+  }
+
+  log(`[JiraHandler] Search page ${page + 1}: showed ${pageItems.length} of ${total}`);
+}
+
+/** Resolve model (same as promptLibraryHandler) */
+async function resolveModel(
+  model: vscode.LanguageModelChat,
+  stream: vscode.ChatResponseStream
+): Promise<vscode.LanguageModelChat | null> {
+  if (model.id !== "auto") { return model; }
+  stream.progress("Seleccionando modelo de lenguaje…");
+  for (const selector of [
+    { vendor: "copilot", family: "gpt-4o" },
+    { vendor: "copilot", family: "gpt-4" },
+    { vendor: "copilot", family: "claude-sonnet" },
+    {},
+  ]) {
+    const models = await vscode.lm.selectChatModels(selector);
+    if (models.length > 0) { return models[0]; }
+  }
+  stream.markdown("❌ No hay modelos de lenguaje disponibles.");
+  return null;
 }
