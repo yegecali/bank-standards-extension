@@ -77,6 +77,24 @@ export async function handleJiraCommand(
   stream.markdown(USAGE_HELP);
 }
 
+// ─── Formatting helpers ───────────────────────────────────────────────────────
+
+/** Returns the first word of a full name (e.g. "Jose Luis Cacsire" → "Jose") */
+function firstNameOnly(fullName: string): string {
+  if (!fullName || fullName === "—") return "—";
+  return fullName.trim().split(/\s+/)[0];
+}
+
+/**
+ * Truncates a string to the first `max` words.
+ * If truncated, appends "...".
+ */
+function truncateWords(text: string, max: number): string {
+  const words = text.trim().split(/\s+/);
+  if (words.length <= max) return text;
+  return words.slice(0, max).join(" ") + "...";
+}
+
 // ─── Sub-actions ─────────────────────────────────────────────────────────────
 
 /**
@@ -116,17 +134,31 @@ async function listAndPickIssue(stream: vscode.ChatResponseStream): Promise<void
     return;
   }
 
+  // ── Markdown table in chat ─────────────────────────────────────────────────
+  stream.markdown(
+    `## 📋 Resultados de JQL (${issues.length})\n\n` +
+    `| Clave | Resumen | Asignado a | Tiempo en progreso |\n` +
+    `|---|---|---|---|\n` +
+    issues.map((issue) => {
+      const resumen   = truncateWords(issue.summary, 10);
+      const asignado  = issue.assignee ? firstNameOnly(issue.assignee) : "—";
+      const tiempo    = issue.timeInProgress ? `⏳ ${issue.timeInProgress}` : "—";
+      return `| ${issue.key} | ${resumen} | ${asignado} | ${tiempo} |`;
+    }).join("\n") +
+    "\n\n"
+  );
+
   interface IssuePickItem extends vscode.QuickPickItem {
     issueKey: string;
   }
 
   const items: IssuePickItem[] = issues.map((issue) => {
-    const timeLabel    = issue.timeInProgress ? `⏳ ${issue.timeInProgress}` : "—";
-    const assigneeLabel = issue.assignee ? `👤 ${issue.assignee}` : "👤 Sin asignar";
+    const timeLabel     = issue.timeInProgress ? `⏳ ${issue.timeInProgress}` : "—";
+    const assigneeLabel = issue.assignee ? `👤 ${firstNameOnly(issue.assignee)}` : "👤 Sin asignar";
 
     return {
       label:       `$(issue-opened) ${issue.key}`,
-      description: `${issue.priority} · ${assigneeLabel} · ${timeLabel}`,
+      description: `${assigneeLabel} · ${timeLabel}`,
       detail:      issue.summary,
       issueKey:    issue.key,
     };

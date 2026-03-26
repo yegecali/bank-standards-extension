@@ -234,6 +234,111 @@
             }
           }
         },
+        "companyStandards.namingRules": {
+          "type": "array",
+          "default": [],
+          "markdownDescription": "Naming convention rules applied as inline diagnostics. Each rule defines a **context** (what kind of identifier) and the expected **convention**. Leave empty to use the built-in defaults. Overrides rules from the knowledge base for matching contexts.\n\nAvailable contexts: `functions`, `variables`, `constants`, `classes`, `interfaces`, `types`, `enums`, `enum members`, `methods`, `parameters`, `private fields`, `test functions`.\n\nAvailable conventions: `camelCase`, `PascalCase`, `snake_case`, `UPPER_SNAKE`, `kebab-case`.",
+          "items": {
+            "type": "object",
+            "required": ["context", "convention", "description"],
+            "additionalProperties": false,
+            "properties": {
+              "context": {
+                "type": "string",
+                "description": "The kind of identifier this rule applies to.",
+                "enum": [
+                  "functions",
+                  "variables",
+                  "constants",
+                  "classes",
+                  "interfaces",
+                  "types",
+                  "enums",
+                  "enum members",
+                  "methods",
+                  "parameters",
+                  "private fields",
+                  "test functions"
+                ]
+              },
+              "convention": {
+                "type": "string",
+                "description": "The required naming convention.",
+                "enum": ["camelCase", "PascalCase", "snake_case", "UPPER_SNAKE", "kebab-case"]
+              },
+              "description": {
+                "type": "string",
+                "description": "Human-readable description shown in the diagnostic message."
+              },
+              "enabled": {
+                "type": "boolean",
+                "default": true,
+                "description": "Set to false to disable this rule without removing it."
+              }
+            }
+          },
+          "examples": [
+            [
+              { "context": "functions",      "convention": "camelCase",   "description": "Functions must use camelCase" },
+              { "context": "variables",      "convention": "camelCase",   "description": "Variables must use camelCase" },
+              { "context": "constants",      "convention": "UPPER_SNAKE", "description": "Constants must use UPPER_SNAKE_CASE" },
+              { "context": "classes",        "convention": "PascalCase",  "description": "Classes must use PascalCase" },
+              { "context": "interfaces",     "convention": "PascalCase",  "description": "Interfaces must use PascalCase" },
+              { "context": "types",          "convention": "PascalCase",  "description": "Type aliases must use PascalCase" },
+              { "context": "enums",          "convention": "PascalCase",  "description": "Enums must use PascalCase" },
+              { "context": "enum members",   "convention": "UPPER_SNAKE", "description": "Enum members must use UPPER_SNAKE_CASE" },
+              { "context": "methods",        "convention": "camelCase",   "description": "Methods must use camelCase" },
+              { "context": "parameters",     "convention": "camelCase",   "description": "Parameters must use camelCase" },
+              { "context": "private fields", "convention": "camelCase",   "description": "Private fields must use camelCase" },
+              { "context": "test functions", "convention": "snake_case",  "description": "Test names must use snake_case", "enabled": true }
+            ]
+          ]
+        },
+        "companyStandards.additionalRules": {
+          "type": "object",
+          "default": {},
+          "markdownDescription": "Additional coding standard rules beyond naming conventions. Each property enables an independent check.",
+          "additionalProperties": false,
+          "properties": {
+            "disallowConsoleLog": {
+              "type": "boolean",
+              "default": false,
+              "description": "Warn when console.log(), console.debug(), or console.info() are used in production code."
+            },
+            "maxLineLength": {
+              "type": "number",
+              "default": 0,
+              "minimum": 0,
+              "description": "Maximum allowed line length in characters. Set to 0 to disable. Common values: 80, 100, 120."
+            },
+            "interfacePrefix": {
+              "type": "string",
+              "default": "optional",
+              "enum": ["required", "forbidden", "optional"],
+              "enumDescriptions": [
+                "Interfaces must start with 'I' (e.g. IUserService)",
+                "Interfaces must NOT start with 'I'",
+                "No restriction on the 'I' prefix (default)"
+              ],
+              "description": "Controls whether TypeScript interfaces must use the 'I' prefix."
+            },
+            "disallowTodoComments": {
+              "type": "boolean",
+              "default": false,
+              "description": "Warn when TODO, FIXME, HACK, or XXX comments are found. Encourages resolving them before merging."
+            },
+            "disallowEmptyCatch": {
+              "type": "boolean",
+              "default": false,
+              "description": "Warn when an empty catch block is detected (swallowed exceptions)."
+            },
+            "disallowExplicitAny": {
+              "type": "boolean",
+              "default": false,
+              "description": "Warn when the 'any' type is used explicitly in TypeScript. Encourages using specific types or 'unknown'."
+            }
+          }
+        },
         "companyStandards.jiraUrl": {
           "type": "string",
           "default": "",

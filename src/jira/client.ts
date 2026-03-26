@@ -9,8 +9,8 @@ export interface JiraIssueSummary {
   summary: string;
   status: string;
   priority: string;
-  project: string;
   assignee: string | null;
+  project: string;
   timeInProgress: string | null;
   created: string;
   statusChangedDate: string | null;
@@ -22,6 +22,8 @@ export interface JiraSubtask {
   status: string;
   priority: string;
   timeOpen: string;
+  /** Raw ISO creation date — used for age-threshold comparisons */
+  createdRaw: string | null;
 }
 
 export interface JiraIssue {
@@ -103,7 +105,7 @@ export class JiraClient {
 
   /**
    * Lists open issues across one or more Jira projects.
-   * Includes time-open and time-in-progress metrics.
+   * Only returns In Progress issues of standard issue types.
    */
   async listIssues(projectKeys: string[], maxResults = 30): Promise<JiraIssueSummary[]> {
     this.validateConfig();
@@ -142,8 +144,8 @@ export class JiraClient {
           summary:          String(fields["summary"] ?? ""),
           status:           statusName,
           priority:         String(priority?.["name"] ?? ""),
-          project:          String(project?.["key"] ?? ""),
           assignee:         assignee ? String(assignee["displayName"] ?? assignee["emailAddress"] ?? "") : null,
+          project:          String(project?.["key"] ?? ""),
           timeInProgress:   this.formatAge(statusChangedDate),
           created,
           statusChangedDate,
@@ -197,11 +199,12 @@ export class JiraClient {
         const stPriority = stFields["priority"] as Record<string, unknown> | undefined;
         const stCreated  = typeof stFields["created"] === "string" ? stFields["created"] : null;
         return {
-          key:      String(st["key"]),
-          summary:  String(stFields["summary"] ?? ""),
-          status:   String(stStatus?.["name"] ?? ""),
-          priority: String(stPriority?.["name"] ?? ""),
-          timeOpen: this.formatAge(stCreated) ?? "—",
+          key:        String(st["key"]),
+          summary:    String(stFields["summary"] ?? ""),
+          status:     String(stStatus?.["name"] ?? ""),
+          priority:   String(stPriority?.["name"] ?? ""),
+          timeOpen:   this.formatAge(stCreated) ?? "—",
+          createdRaw: stCreated,
         };
       });
 
@@ -365,10 +368,6 @@ export class JiraClient {
 
   // ─── Text → ADF conversion ─────────────────────────────────────────────────
 
-  /**
-   * Converts plain text (with newlines) to Atlassian Document Format (ADF).
-   * Blank lines separate paragraphs; single newlines become hardBreaks.
-   */
   private textToAdf(text: string): AdfDoc {
     const paragraphs = text.split(/\n{2,}/);
     return {
