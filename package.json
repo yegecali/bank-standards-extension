@@ -365,6 +365,12 @@
           "default": [],
           "description": "Jira project key(s). Accepts a single string (\"BANK\") or an array ([\"BANK\",\"DEV\"]). Used by /jira and /new-feature commands."
         },
+        "companyStandards.subtaskAgeThresholdDays": {
+          "type": "number",
+          "default": 3,
+          "minimum": 0,
+          "markdownDescription": "Maximum allowed age **in days** for a subtask. Subtasks open longer than this limit are flagged with a 🚨 critical alarm in the `/jira subtasks` view.\n\nExamples:\n- `3` → warn if subtask is older than 3 days\n- `7` → warn if subtask is older than 1 week\n- `0` → always flag every subtask\n\nSet to a very large number (e.g. `9999`) to disable the alarm."
+        },
         "companyStandards.pagesMap": {
           "type": "object",
           "default": {

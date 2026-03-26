@@ -79,6 +79,23 @@ export async function handleJiraCommand(
 
 // ─── Formatting helpers ───────────────────────────────────────────────────────
 
+/** Reads the subtask age threshold (in days) from settings. Default: 3. */
+function getSubtaskAgeThreshold(): number {
+  const config = vscode.workspace.getConfiguration("companyStandards");
+  return config.get<number>("subtaskAgeThresholdDays") ?? 3;
+}
+
+/**
+ * Returns true if the subtask was created more than `thresholdDays` days ago.
+ * Returns false if `createdRaw` is null/invalid (cannot determine age).
+ */
+function isOverThreshold(createdRaw: string | null | undefined, thresholdDays: number): boolean {
+  if (!createdRaw) return false;
+  const ms = Date.now() - new Date(createdRaw).getTime();
+  if (isNaN(ms) || ms < 0) return false;
+  return ms / 86_400_000 > thresholdDays;
+}
+
 /** Returns the first word of a full name (e.g. "Jose Luis Cacsire" → "Jose") */
 function firstNameOnly(fullName: string): string {
   if (!fullName || fullName === "—") return "—";
@@ -217,17 +234,27 @@ async function showIssueDetail(issueKey: string, stream: vscode.ChatResponseStre
 
   // Subtasks table
   if (issue.subtasks.length > 0) {
-    stream.markdown(`### Subtareas (${issue.subtasks.length})\n\n`);
-    stream.markdown(
-      `| Clave | Resumen | Estado | Prioridad | Tiempo abierto |\n` +
-      `|---|---|---|---|---|\n`
-    );
-    for (const st of issue.subtasks) {
+    const threshold    = getSubtaskAgeThreshold();
+    const criticalKeys = issue.subtasks.filter((st) => isOverThreshold(st.createdRaw, threshold)).map((st) => st.key);
+
+    if (criticalKeys.length > 0) {
       stream.markdown(
-        `| ${st.key} | ${st.summary} | ${st.status} | ${st.priority} | 📅 ${st.timeOpen} |\n`
+        `> 🚨 **${criticalKeys.length} subtarea(s) crítica(s)** con más de **${threshold} día(s)** abiertas: ` +
+        criticalKeys.join(", ") + `\n\n`
       );
     }
-    stream.markdown("\n");
+
+    stream.markdown(
+      `### Subtareas (${issue.subtasks.length})\n\n` +
+      `| Clave | Resumen | Estado | Tiempo abierto |\n` +
+      `|---|---|---|---|\n` +
+      issue.subtasks.map((st) => {
+        const critical = isOverThreshold(st.createdRaw, threshold);
+        const timeCell = critical ? `🚨 **${st.timeOpen}** ← CRÍTICA` : `📅 ${st.timeOpen}`;
+        return `| ${st.key} | ${truncateWords(st.summary, 10)} | ${st.status} | ${timeCell} |`;
+      }).join("\n") +
+      "\n\n"
+    );
   } else {
     stream.markdown(`_Esta issue no tiene subtareas._\n\n`);
   }
@@ -258,16 +285,27 @@ async function listSubtasks(issueKey: string, stream: vscode.ChatResponseStream)
     return;
   }
 
-  stream.markdown(`## 🔗 Subtareas de ${issueKey} (${subtasks.length})\n\n`);
-  stream.markdown(
-    `| Clave | Resumen | Estado | Prioridad | Tiempo abierto |\n` +
-    `|---|---|---|---|---|\n`
-  );
-  for (const st of subtasks) {
+  const threshold    = getSubtaskAgeThreshold();
+  const criticalKeys = subtasks.filter((st) => isOverThreshold(st.createdRaw, threshold)).map((st) => st.key);
+
+  if (criticalKeys.length > 0) {
     stream.markdown(
-      `| ${st.key} | ${st.summary} | ${st.status} | ${st.priority} | 📅 ${st.timeOpen} |\n`
+      `> 🚨 **${criticalKeys.length} subtarea(s) crítica(s)** llevan más de **${threshold} día(s)** abiertas: ` +
+      criticalKeys.join(", ") + `\n\n`
     );
   }
+
+  stream.markdown(
+    `## 🔗 Subtareas de ${issueKey} (${subtasks.length})\n\n` +
+    `| Clave | Resumen | Estado | Tiempo abierto |\n` +
+    `|---|---|---|---|\n` +
+    subtasks.map((st) => {
+      const critical  = isOverThreshold(st.createdRaw, threshold);
+      const timeCell  = critical ? `🚨 **${st.timeOpen}** ← CRÍTICA` : `📅 ${st.timeOpen}`;
+      return `| ${st.key} | ${truncateWords(st.summary, 10)} | ${st.status} | ${timeCell} |`;
+    }).join("\n") +
+    "\n"
+  );
 
   log(`[JiraHandler] Subtasks listed for ${issueKey}: ${subtasks.length}`);
 }
