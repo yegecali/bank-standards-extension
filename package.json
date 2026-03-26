@@ -2,7 +2,7 @@
   "name": "company-coding-standard",
   "displayName": "Company Coding Standard",
   "description": "Define and enforce your company's development standards directly in VSCode — powered by your own knowledge base (Notion or Confluence). Naming conventions, test standards, project scaffolding, prompt library, Jira integration, and AI agent.",
-  "version": "0.0.22",
+  "version": "0.0.23",
   "publisher": "yemicanchari",
   "preview": true,
   "license": "MIT",
@@ -240,7 +240,11 @@
           "markdownDescription": "Naming convention rules applied as inline diagnostics. Each rule defines a **context** (what kind of identifier) and the expected **convention**. Leave empty to use the built-in defaults. Overrides rules from the knowledge base for matching contexts.\n\nAvailable contexts: `functions`, `variables`, `constants`, `classes`, `interfaces`, `types`, `enums`, `enum members`, `methods`, `parameters`, `private fields`, `test functions`.\n\nAvailable conventions: `camelCase`, `PascalCase`, `snake_case`, `UPPER_SNAKE`, `kebab-case`.",
           "items": {
             "type": "object",
-            "required": ["context", "convention", "description"],
+            "required": [
+              "context",
+              "convention",
+              "description"
+            ],
             "additionalProperties": false,
             "properties": {
               "context": {
@@ -264,7 +268,13 @@
               "convention": {
                 "type": "string",
                 "description": "The required naming convention.",
-                "enum": ["camelCase", "PascalCase", "snake_case", "UPPER_SNAKE", "kebab-case"]
+                "enum": [
+                  "camelCase",
+                  "PascalCase",
+                  "snake_case",
+                  "UPPER_SNAKE",
+                  "kebab-case"
+                ]
               },
               "description": {
                 "type": "string",
@@ -279,18 +289,67 @@
           },
           "examples": [
             [
-              { "context": "functions",      "convention": "camelCase",   "description": "Functions must use camelCase" },
-              { "context": "variables",      "convention": "camelCase",   "description": "Variables must use camelCase" },
-              { "context": "constants",      "convention": "UPPER_SNAKE", "description": "Constants must use UPPER_SNAKE_CASE" },
-              { "context": "classes",        "convention": "PascalCase",  "description": "Classes must use PascalCase" },
-              { "context": "interfaces",     "convention": "PascalCase",  "description": "Interfaces must use PascalCase" },
-              { "context": "types",          "convention": "PascalCase",  "description": "Type aliases must use PascalCase" },
-              { "context": "enums",          "convention": "PascalCase",  "description": "Enums must use PascalCase" },
-              { "context": "enum members",   "convention": "UPPER_SNAKE", "description": "Enum members must use UPPER_SNAKE_CASE" },
-              { "context": "methods",        "convention": "camelCase",   "description": "Methods must use camelCase" },
-              { "context": "parameters",     "convention": "camelCase",   "description": "Parameters must use camelCase" },
-              { "context": "private fields", "convention": "camelCase",   "description": "Private fields must use camelCase" },
-              { "context": "test functions", "convention": "snake_case",  "description": "Test names must use snake_case", "enabled": true }
+              {
+                "context": "functions",
+                "convention": "camelCase",
+                "description": "Functions must use camelCase"
+              },
+              {
+                "context": "variables",
+                "convention": "camelCase",
+                "description": "Variables must use camelCase"
+              },
+              {
+                "context": "constants",
+                "convention": "UPPER_SNAKE",
+                "description": "Constants must use UPPER_SNAKE_CASE"
+              },
+              {
+                "context": "classes",
+                "convention": "PascalCase",
+                "description": "Classes must use PascalCase"
+              },
+              {
+                "context": "interfaces",
+                "convention": "PascalCase",
+                "description": "Interfaces must use PascalCase"
+              },
+              {
+                "context": "types",
+                "convention": "PascalCase",
+                "description": "Type aliases must use PascalCase"
+              },
+              {
+                "context": "enums",
+                "convention": "PascalCase",
+                "description": "Enums must use PascalCase"
+              },
+              {
+                "context": "enum members",
+                "convention": "UPPER_SNAKE",
+                "description": "Enum members must use UPPER_SNAKE_CASE"
+              },
+              {
+                "context": "methods",
+                "convention": "camelCase",
+                "description": "Methods must use camelCase"
+              },
+              {
+                "context": "parameters",
+                "convention": "camelCase",
+                "description": "Parameters must use camelCase"
+              },
+              {
+                "context": "private fields",
+                "convention": "camelCase",
+                "description": "Private fields must use camelCase"
+              },
+              {
+                "context": "test functions",
+                "convention": "snake_case",
+                "description": "Test names must use snake_case",
+                "enabled": true
+              }
             ]
           ]
         },
@@ -314,7 +373,11 @@
             "interfacePrefix": {
               "type": "string",
               "default": "optional",
-              "enum": ["required", "forbidden", "optional"],
+              "enum": [
+                "required",
+                "forbidden",
+                "optional"
+              ],
               "enumDescriptions": [
                 "Interfaces must start with 'I' (e.g. IUserService)",
                 "Interfaces must NOT start with 'I'",
