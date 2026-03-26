@@ -1,334 +1,282 @@
 # Company Coding Standard
 
-VSCode extension that connects to your company's knowledge base (Notion or Confluence) to enforce coding standards, validate naming conventions, scaffold projects, generate tests, create documentation, and manage Jira issues — all via a built-in AI agent.
+> Define and enforce your company's development standards directly in VSCode — powered by your own knowledge base (Notion or Confluence).
+
+**Preview** · [Marketplace](https://marketplace.visualstudio.com/items?itemName=yemicanchari.company-coding-standard)
 
 ---
 
-## Requirements
+## What it does
 
-- VS Code `1.90.0` or higher
-- GitHub Copilot extension (active subscription) — required for the `@bank` agent
-- A Notion integration token **or** Confluence API credentials
-- *(Optional)* Jira Cloud credentials for `/jira` and `/new-feature` commands
+This extension connects VSCode to your company's knowledge base (Notion or Confluence) and gives your team an AI agent that enforces standards, generates code, manages Jira issues, and automates repetitive project tasks — all from the chat panel.
 
 ---
 
-## Installation
+## Commands at a glance
 
-1. Open VS Code
-2. Go to **Extensions** (`Ctrl+Shift+X` / `Cmd+Shift+X`)
-3. Search for **Company Coding Standard**
-4. Click **Install**
+All commands are invoked via the `@company` agent in the VSCode Chat panel.
+
+### Knowledge & Standards
+
+| Command | What it does |
+|---|---|
+| `@company /standards` | Fetches and explains your company's naming conventions and coding rules from the knowledge base |
+| `@company /review` | Reviews the active editor file against your coding standards |
+| `@company /specialty [name]` | Changes the active specialty (backend, frontend, qa) or lists the configured ones |
+
+### Code Generation
+
+| Command | What it does |
+|---|---|
+| `@company /generate-test` | Generates unit tests for the active file following your test standards (Triple AAA pattern) |
+| `@company /docs` | Generates JSDoc/JavaDoc for the active file following your documentation standards |
+| `@company /commit` | Suggests a commit message based on staged changes and your commit conventions |
+| `@company /create` | Scaffolds a full Maven + Java 21 + Quarkus project from your Notion/Confluence template |
+
+### Prompt Library
+
+| Command | What it does |
+|---|---|
+| `@company /prompts` | Lists all available prompts from your knowledge base |
+| `@company /prompts <name>` | Applies a saved prompt from your knowledge base to the active editor file |
+
+Example prompts you can define: `sonar-vulnerabilities`, `fortify-remediation`, `anti-patterns`, `test-quality`.
+
+### Project Actions
+
+| Command | What it does |
+|---|---|
+| `@company /project` | Lists all available project actions from your knowledge base |
+| `@company /project <action>` | Reads your workspace context (pom.xml, properties, file tree) and applies an AI-driven action defined in your knowledge base |
+
+Examples:
+```
+@company /project agrega-redis
+@company /project agrega-client-rest
+@company /project agrega-client-rest configurar para produccion
+```
+
+Each action is an H2 heading in your configured `projectActionsPage`. The agent reads your real project files and generates or modifies code accordingly:
+- **New files** are created automatically in the workspace
+- **Existing files** (pom.xml, application.properties) show suggested changes for manual review
+
+### Jira Integration
+
+| Command | What it does |
+|---|---|
+| `@company /jira` | Lists issues using a configured JQL query (or default: In Progress issues from your projects) |
+| `@company /jira PROJ-123` | Shows full issue detail: description, priority, story points, subtasks, time metrics |
+| `@company /jira subtasks PROJ-123` | Lists your subtasks assigned to you on that issue, with a critical age alarm |
+| `@company /jira create PROJ-123` | Creates a new subtask under a parent issue |
+| `@company /jira update PROJ-123` | Updates the issue's documentation (description, comments) |
+
+### New Feature Workflow
+
+| Command | What it does |
+|---|---|
+| `@company /new-feature` | Guided flow: select a Jira story, plan and implement it following your company standards |
+
+---
+
+## LM Tools (available in any Copilot chat)
+
+These tools are also available as Copilot tools (no `@company` needed):
+
+| Tool | When it activates |
+|---|---|
+| `#companyStandards` | User asks about naming conventions or coding rules |
+| `#bankReview` | User asks to review or validate a test file |
+| `#bankCreate` | User asks to create or scaffold a new project |
+
+---
+
+## VS Code Commands (Command Palette)
+
+| Command | What it does |
+|---|---|
+| `Company: New Project Guide` | Opens the guided project creation flow |
+| `Company: Refresh Standards` | Clears the knowledge cache and reloads from source |
+| `Company: Setup Confluence Space` | Wizard to configure which Confluence spaces map to which page types |
 
 ---
 
 ## Configuration
 
-Open your VS Code settings (`Ctrl+,`) and search for `companyStandards`, or add the following to your `settings.json`.
+Open `Settings (Ctrl+,)` and search for `companyStandards`.
 
-### Option A — Notion
+### A. Knowledge Source
 
 ```json
-{
-  "companyStandards.knowledgeSource": "notion",
-  "companyStandards.notionToken": "secret_xxxxxxxxxxxxxxxxxxxx",
-  "companyStandards.pagesMap": {
-    "standards": "<notion-page-id>",
-    "project":   "<notion-page-id>",
-    "testing":   "<notion-page-id>",
-    "prompts":   "<notion-page-id>"
+"companyStandards.knowledgeSource": "notion"  // or "confluence"
+```
+
+#### Option A1 — Notion
+```json
+"companyStandards.notionToken": "secret_xxxx"
+```
+Get it from [notion.so/my-integrations](https://www.notion.so/my-integrations).
+
+#### Option A2 — Confluence
+```json
+"companyStandards.confluenceUrl":   "https://yourcompany.atlassian.net",
+"companyStandards.confluenceEmail": "you@company.com",
+"companyStandards.confluenceToken": "your-api-token"
+```
+Get your token from [id.atlassian.com/manage-profile/security/api-tokens](https://id.atlassian.com/manage-profile/security/api-tokens).
+
+Use `Company: Setup Confluence Space` from the Command Palette for a guided setup wizard.
+
+---
+
+### B. Pages Map (per specialty)
+
+Map each specialty to the pages in your knowledge base:
+
+```json
+"companyStandards.specialty": "backend",
+
+"companyStandards.specialtiesMap": {
+  "backend": {
+    "standards": "<page-id>",
+    "testing":   "<page-id>",
+    "project":   "<page-id>",
+    "prompts":   "<page-id>"
+  },
+  "frontend": {
+    "standards": "<page-id>",
+    "testing":   "<page-id>"
+  },
+  "qa": {
+    "standards": "<page-id>",
+    "testing":   "<page-id>"
   }
 }
 ```
 
-#### How to get a Notion integration token
-
-1. Go to [notion.so/my-integrations](https://notion.so/my-integrations)
-2. Click **+ New integration**
-3. Copy the **Internal Integration Token** (`secret_...`)
-
-#### How to get a Notion Page ID
-
-From the page URL:
-```
-https://notion.so/My-Page-Title-<PAGE_ID>
-                                 ^^^^^^^^
-```
-Copy the last segment (32-char UUID, with or without hyphens).
-
-#### How to connect your integration to a page
-
-1. Open the Notion page
-2. Click `•••` (top-right menu)
-3. **Connections → Add connection** → select your integration
-4. Repeat for each page in `pagesMap`
-
----
-
-### Option B — Confluence
-
+Or use the flat fallback (no specialties):
 ```json
-{
-  "companyStandards.knowledgeSource": "confluence",
-  "companyStandards.confluenceUrl":   "https://yourcompany.atlassian.net",
-  "companyStandards.confluenceEmail": "you@yourcompany.com",
-  "companyStandards.confluenceToken": "<atlassian-api-token>",
-  "companyStandards.pagesMap": {
-    "standards": "123456789",
-    "project":   "987654321",
-    "testing":   "111222333",
-    "prompts":   "444555666"
-  }
+"companyStandards.pagesMap": {
+  "standards": "<page-id>",
+  "testing":   "<page-id>",
+  "project":   "<page-id>",
+  "prompts":   "<page-id>"
 }
 ```
 
-#### How to get a Confluence API token
+---
 
-1. Go to [id.atlassian.com/manage-profile/security/api-tokens](https://id.atlassian.com/manage-profile/security/api-tokens)
-2. Click **Create API token**
-3. Copy the generated token
+### C. Project Actions Page
 
-#### How to get a Confluence Page ID
+The `/project` command reads actions from a dedicated page:
 
-From the page URL:
+```json
+"companyStandards.projectActionsPage": "<page-id-or-url>"
 ```
-https://yourcompany.atlassian.net/wiki/spaces/SPACE/pages/123456789/Page+Title
-                                                           ^^^^^^^^^
-```
-Copy the numeric segment.
 
-> **Tip:** Run `Bank: Setup Confluence Space` from the Command Palette for a guided wizard that lists your spaces and maps pages automatically.
+Structure the page with H2 headings — each becomes an action:
+
+```markdown
+## agrega-redis
+Lee el pom.xml del proyecto actual.
+Agrega la dependencia `io.quarkus:quarkus-redis-client`.
+Crea la interfaz `RedisClient` en el paquete principal con métodos get, set, delete.
+Configura las propiedades de conexión en application.properties.
+Muestra un ejemplo de cómo inyectarla.
+
+Los archivos nuevos deben incluir como primera línea: // filepath: ruta/al/Archivo.java
+
+## agrega-client-rest
+Lee el pom.xml y application.properties actuales.
+Agrega la dependencia de MicroProfile REST Client.
+Crea la interfaz del cliente en src/main/java/.../client/NombreClient.java.
+Crea el DAO en src/main/java/.../dao/NombreDao.java.
+Agrega la configuración del base-url en application.properties.
+```
 
 ---
 
-### Option C — Multiple specialties (frontend / backend / qa)
-
-If your teams have separate documentation pages per specialty, use `specialtiesMap` instead of `pagesMap`:
+### D. Jira
 
 ```json
-{
-  "companyStandards.knowledgeSource": "notion",
-  "companyStandards.notionToken": "secret_xxxxxxxxxxxxxxxxxxxx",
-  "companyStandards.specialty": "backend",
-  "companyStandards.specialtiesMap": {
-    "backend": {
-      "standards": "<notion-page-id>",
-      "testing":   "<notion-page-id>",
-      "project":   "<notion-page-id>",
-      "prompts":   "<notion-page-id>"
-    },
-    "frontend": {
-      "standards": "<notion-page-id>",
-      "testing":   "<notion-page-id>",
-      "prompts":   "<notion-page-id>"
-    },
-    "qa": {
-      "testing": "<notion-page-id>",
-      "prompts": "<notion-page-id>"
-    }
-  }
+"companyStandards.jiraUrl":     "https://yourcompany.atlassian.net",
+"companyStandards.jiraEmail":   "you@company.com",
+"companyStandards.jiraToken":   "your-api-token",
+"companyStandards.jiraProject": ["BANK", "DEV"]
+```
+
+**Custom JQL** (overrides the default filter):
+```json
+"companyStandards.jiraJql": "project = BANK AND assignee = currentUser() AND status != Done ORDER BY priority DESC"
+```
+
+**Subtask age alarm** (flags subtasks open too long):
+```json
+"companyStandards.subtaskAgeThresholdDays": 3
+```
+
+---
+
+### E. Coding Standards Rules (inline diagnostics)
+
+Rules are applied as inline warnings directly in the editor.
+
+**Naming conventions:**
+```json
+"companyStandards.namingRules": [
+  { "context": "functions",  "convention": "camelCase",   "description": "Functions must use camelCase" },
+  { "context": "classes",    "convention": "PascalCase",  "description": "Classes must use PascalCase" },
+  { "context": "constants",  "convention": "UPPER_SNAKE", "description": "Constants must use UPPER_SNAKE_CASE" },
+  { "context": "interfaces", "convention": "PascalCase",  "description": "Interfaces must use PascalCase" }
+]
+```
+
+Available contexts: `functions`, `variables`, `constants`, `classes`, `interfaces`, `types`, `enums`, `enum members`, `methods`, `parameters`, `private fields`, `test functions`
+
+Available conventions: `camelCase`, `PascalCase`, `snake_case`, `UPPER_SNAKE`, `kebab-case`
+
+**Additional rules:**
+```json
+"companyStandards.additionalRules": {
+  "disallowConsoleLog":    true,   // warn on console.log in production code
+  "maxLineLength":         120,    // warn if lines exceed 120 chars
+  "interfacePrefix":       "forbidden",  // "required" | "forbidden" | "optional"
+  "disallowTodoComments":  true,   // warn on TODO/FIXME/HACK comments
+  "disallowEmptyCatch":    true,   // warn on empty catch blocks
+  "disallowExplicitAny":   true    // warn on explicit `any` in TypeScript
 }
 ```
 
-Each specialty only needs to define the page types it uses — missing keys fall back to `pagesMap`.
-
-#### Switching specialty
-
-```
-@bank /specialty              ← list all configured specialties
-@bank /specialty frontend     ← switch to frontend
-@bank /specialty qa           ← switch to qa
-```
-
 ---
 
-### Option D — Jira integration
+## Prompt Library — page format
 
-Required for `/jira` and `/new-feature` commands:
+Structure your prompts page with H2 headings. The body becomes the prompt template:
 
-```json
-{
-  "companyStandards.jiraUrl":     "https://yourcompany.atlassian.net",
-  "companyStandards.jiraEmail":   "you@yourcompany.com",
-  "companyStandards.jiraToken":   "<atlassian-api-token>",
-  "companyStandards.jiraProject": "BANK"
-}
-```
-
-`jiraProject` accepts a single project key or an array:
-```json
-"companyStandards.jiraProject": ["BANK", "PLAT", "INFRA"]
-```
-
----
-
-### All settings
-
-| Setting | Type | Description |
-|---|---|---|
-| `knowledgeSource` | `"notion"` \| `"confluence"` | Knowledge backend to use |
-| `notionToken` | `string` | Notion integration token |
-| `confluenceUrl` | `string` | Confluence Cloud base URL |
-| `confluenceEmail` | `string` | Atlassian account email |
-| `confluenceToken` | `string` | Atlassian API token |
-| `specialty` | `string` | Active specialty (`backend`, `frontend`, `qa`, …). Default: `backend` |
-| `specialtiesMap` | `object` | Per-specialty page IDs (preferred over `pagesMap`) |
-| `pagesMap.standards` | `string` | Page ID with naming convention rules |
-| `pagesMap.project` | `string` | Page ID with project template |
-| `pagesMap.testing` | `string` | Page ID with test standards |
-| `pagesMap.prompts` | `string` | Page ID with the prompt library |
-| `jiraUrl` | `string` | Jira Cloud base URL |
-| `jiraEmail` | `string` | Atlassian account email for Jira |
-| `jiraToken` | `string` | Atlassian API token for Jira |
-| `jiraProject` | `string \| string[]` | Jira project key(s) to query |
-
----
-
-## Features
-
-### Inline diagnostics
-
-Automatically validates naming conventions on file **open** and **save** for TypeScript, JavaScript, TSX, JSX, and Java.
-
-| Pattern | Convention | Example |
-|---|---|---|
-| Functions / arrow functions | `camelCase` | `getUserData` |
-| Variables (`let`, `var`) | `camelCase` | `userName` |
-| Classes | `PascalCase` | `UserService` |
-| Constants (`const`) | `UPPER_SNAKE` | `MAX_RETRIES` |
-| Jest tests (`it`, `test`) | `camelCase` | `shouldReturnUser` |
-| Java methods | `camelCase` | `findUserById` |
-| JUnit `@Test` methods | `camelCase` | `shouldThrowWhenNull` |
-
-Click the lightbulb (`Ctrl+.`) on a violation to **Fix this occurrence** or **Fix all in file**.
-
----
-
-### @bank agent — all commands
-
-Open GitHub Copilot Chat and type `@bank`:
-
-#### Knowledge commands
-
-| Command | Description |
-|---|---|
-| `@bank /standards` | Show naming conventions from knowledge base |
-| `@bank /review` | Review active file against company standards |
-| `@bank /create` | Scaffold a Maven + Java 21 + Quarkus project |
-| `@bank /specialty` | List all configured specialties |
-| `@bank /specialty <name>` | Switch active specialty (frontend, backend, qa…) |
-
-#### Code generation commands
-
-| Command | Description |
-|---|---|
-| `@bank /generate-test` | Generate unit tests for the active file following company test standards (AAA pattern) |
-| `@bank /docs` | Add JSDoc/JavaDoc comments to the active file following company documentation standards |
-| `@bank /commit` | Generate a Conventional Commits message based on staged git changes |
-
-#### Prompt library commands
-
-| Command | Description |
-|---|---|
-| `@bank /prompts` | List all saved prompts from the knowledge base |
-| `@bank /prompts <name>` | Apply a saved prompt to the active file |
-
-#### Jira commands
-
-| Command | Description |
-|---|---|
-| `@bank /jira` | List and pick from open Jira issues across configured projects |
-| `@bank /jira PROJ-123` | Show full detail of a specific issue (subtasks, time metrics) |
-| `@bank /jira subtasks PROJ-123` | List all subtasks of an issue |
-| `@bank /jira create PROJ-123` | Create a new subtask under a parent issue |
-| `@bank /new-feature` | Guided 8-step workflow: pick story → plan → implement with company standards |
-| `@bank /new-feature PROJ-123` | Start new-feature flow from a specific issue |
-
----
-
-### /new-feature workflow
-
-The `/new-feature` command orchestrates a complete implementation flow:
-
-1. Lists open Jira stories → user picks one
-2. Displays full issue detail (description, priority, story points)
-3. LLM generates an implementation plan (components, endpoints, tests needed)
-4. User confirms to proceed
-5. Loads company standards for the active specialty
-6. LLM streams step-by-step implementation guidance applying company conventions
-7. Suggests a Conventional Commits message: `feat(proj): summary — ISSUE-KEY`
-
----
-
-### LM Tools (agent mode)
-
-Three tools Copilot can invoke automatically — no `@bank` required:
-
-| Tool | Trigger | Reference |
-|---|---|---|
-| `bank_get_standards` | Questions about naming rules | `#companyStandards` |
-| `bank_review_test` | Test file review requests | `#bankReview` |
-| `bank_create_project` | Project creation requests | `#bankCreate` |
-
----
-
-### Commands (Command Palette)
-
-| Command | Description |
-|---|---|
-| `Bank: Refresh Standards from Notion` | Clears cache and reloads rules |
-| `Bank: New Project Guide` | Opens the project guide webview |
-| `Bank: Setup Confluence Space` | Guided wizard to select Confluence space and map pages |
-
----
-
-## Prompt Library page format
-
-Create a Notion/Confluence page and add it to `pagesMap.prompts` or `specialtiesMap.<specialty>.prompts`.
-
-Each prompt is a **Heading 2** followed by a description paragraph and the prompt text:
-
-```
+```markdown
 ## sonar-vulnerabilidades
-Analiza el código buscando vulnerabilidades que detectaría SonarQube.
+Analiza el código del archivo activo buscando vulnerabilidades reportadas por SonarQube.
+Para cada vulnerabilidad encontrada explica: qué es, por qué es un riesgo, y cómo corregirla.
 
-Actúa como SonarQube y revisa el siguiente código.
-Para cada issue indica: línea, regla, severidad y corrección.
-Severidades: BLOCKER / CRITICAL / MAJOR / MINOR / INFO
-Al final muestra un resumen total.
+## fortify-remediation
+Revisa el archivo activo e identifica problemas detectables por Fortify Static Code Analyzer:
+inyecciones SQL, XSS, manejo inseguro de credenciales, etc.
+
+## calidad-de-tests
+Evalúa la calidad de los tests del archivo activo. Verifica:
+- Que sigan el patrón Triple AAA (Arrange, Act, Assert)
+- Que los nombres sean descriptivos
+- Que no haya lógica de negocio en los tests
+```
+
+Use `@company /prompts` to list them, `@company /prompts <name>` to apply one.
 
 ---
 
-## aaa-pattern
-Verifica que los tests siguen el patrón Arrange-Act-Assert.
+## Requirements
 
-Analiza cada método de test e identifica Arrange, Act y Assert.
-Si alguna sección falta, indica la línea exacta y cómo corregirla.
-```
-
-**Rules:**
-- Use **Heading 2** (`##`) to name each prompt — the slug is auto-generated (e.g. `"Prompts: sonar-xxx"` → `"sonar-xxx"`)
-- First paragraph = description shown in the catalog
-- Remaining paragraphs and bullets = prompt template sent to the LLM
-- A **Code Block** macro works too, and takes priority over plain paragraphs
-
-**Invoke:**
-```
-@bank /prompts                         ← list catalog
-@bank /prompts sonar-vulnerabilidades  ← apply prompt on active file
-@bank /prompts aaa                     ← partial match → aaa-pattern
-```
-
----
-
-## Logs & Debugging
-
-All HTTP calls, prompt parsing, and model resolution are logged to the **Output Channel**:
-
-1. Open **View → Output**
-2. Select **Company Coding Standard** in the dropdown
-
-Useful for diagnosing Confluence/Notion connectivity, prompt detection issues, and Jira API errors.
+- VSCode 1.90+
+- GitHub Copilot (Chat) extension active
+- Notion or Confluence account with an integration token
 
 ---
 
