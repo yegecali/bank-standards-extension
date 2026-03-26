@@ -165,14 +165,15 @@ async function listAndPickIssue(stream: vscode.ChatResponseStream): Promise<void
 
   stream.markdown(`## ${heading}\n\n`);
   stream.markdown(
-    `| Clave | Resumen | Estado | Prioridad | Asignado a | Tiempo en progreso |\n` +
-    `|---|---|---|---|---|---|\n`
+    `| Clave | Resumen | Asignado a | Tiempo en progreso |\n` +
+    `|---|---|---|---|\n`
   );
   for (const issue of issues) {
     const timeLabel     = issue.timeInProgress ? `⏳ ${issue.timeInProgress}` : "—";
-    const assigneeLabel = issue.assignee ?? "Sin asignar";
+    const assigneeLabel = issue.assignee ? firstNameOnly(issue.assignee) : "Sin asignar";
+    const summaryLabel  = truncateWords(issue.summary, 10);
     stream.markdown(
-      `| ${issue.key} | ${issue.summary} | ${issue.status} | ${issue.priority} | ${assigneeLabel} | ${timeLabel} |\n`
+      `| ${issue.key} | ${summaryLabel} | ${assigneeLabel} | ${timeLabel} |\n`
     );
   }
   stream.markdown(`\n_Para crear una subtarea usa \`/jira create PROJ-123\`._\n`);
