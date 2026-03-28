@@ -17,6 +17,8 @@ import { handleCheckstyleCommand } from "../handlers/checkstyleHandler";
 import { handleReviewCommand } from "../handlers/reviewHandler";
 import { handleGenerateTestCommand } from "../handlers/generateTestHandler";
 import { handleCommitCommand } from "../handlers/commitHandler";
+import { handlePrReviewCommand } from "../handlers/prReviewHandler";
+import { handleCoverageCommand } from "../handlers/coverageHandler";
 import { isCreateIntent, createProjectFromNotion } from "./projectCreator";
 import { getStagedDiff } from "./gitHelper";
 import { BankPrompt } from "./BankPrompt";
@@ -152,6 +154,7 @@ Soy tu agente de estándares de desarrollo. Te ayudo a escribir código correcto
 | \`@company /generate-test\` | Genera tests unitarios para el archivo activo (patrón Triple AAA) |
 | \`@company /docs\` | Genera JSDoc/JavaDoc para el archivo activo |
 | \`@company /commit\` | Sugiere un mensaje de commit basado en tus cambios staged |
+| \`@company /pr-review\` | Revisa el diff completo de tu rama vs. main: lógica, tests, naming, bugs |
 | \`@company /prompts\` | Lista los prompts disponibles en tu base de conocimiento |
 | \`@company /prompts <nombre>\` | Aplica un prompt al archivo activo (ej: \`sonar-vulnerabilidades\`) |
 
@@ -165,6 +168,7 @@ Soy tu agente de estándares de desarrollo. Te ayudo a escribir código correcto
 | \`@company /project\` | Lista las acciones de proyecto disponibles |
 | \`@company /project <acción>\` | Ejecuta una acción sobre el proyecto (ej: \`agrega-redis\`, \`agrega-client-rest\`) |
 | \`@company /new-feature\` | Flujo guiado: selecciona historia de Jira → planifica → implementa |
+| \`@company /coverage\` | Ejecuta mvn test y analiza la cobertura JaCoCo — muestra clases bajo umbral + sugerencias |
 
 ---
 
@@ -278,6 +282,18 @@ function makeHandler(context: vscode.ExtensionContext): vscode.ChatRequestHandle
     if (request.command === "commit") {
       await handleCommitCommand(stream, request.model, token);
       return { metadata: { intent: "commit" } };
+    }
+
+    // 0a0h — Handle /pr-review command
+    if (request.command === "pr-review") {
+      await handlePrReviewCommand(stream, request.model, token);
+      return { metadata: { intent: "pr-review" } };
+    }
+
+    // 0a0i — Handle /coverage command
+    if (request.command === "coverage") {
+      await handleCoverageCommand(stream, request.model, token);
+      return { metadata: { intent: "coverage" } };
     }
 
     // 0a1 — Handle /search command

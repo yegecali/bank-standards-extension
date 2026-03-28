@@ -2,7 +2,7 @@
   "name": "company-coding-standard",
   "displayName": "Company Coding Standard",
   "description": "Define and enforce your company's development standards directly in VSCode — powered by your own knowledge base (Notion or Confluence). Naming conventions, test standards, project scaffolding, prompt library, Jira integration, and AI agent.",
-  "version": "0.0.45",
+  "version": "0.0.46",
   "publisher": "yemicanchari",
   "preview": true,
   "license": "MIT",
@@ -118,6 +118,14 @@
           {
             "name": "checkstyle",
             "description": "Revisa y corrige todos los archivos Java: genera JavaDoc, arregla indentación y espaciado sin tocar la lógica. Luego valida con 'mvn checkstyle:check' e itera hasta limpiar los errores. Escribe el reporte en docs/checkstyle-report.md"
+          },
+          {
+            "name": "pr-review",
+            "description": "Revisa el diff completo de la rama actual vs. main (git diff main...HEAD). LLM analiza: cambios de lógica, cobertura de tests, nomenclatura, bugs potenciales y violaciones de estándares. Pide la rama base por QuickPick."
+          },
+          {
+            "name": "coverage",
+            "description": "Analiza la cobertura de tests del proyecto Maven. Puede ejecutar 'mvn test' primero, luego lee target/site/jacoco/jacoco.csv (JaCoCo) o target/surefire-reports. Muestra tabla de cobertura por clase y sugiere qué testear en clases bajo el umbral."
           }
         ],
         "sampleRequests": [
@@ -263,7 +271,14 @@
         "companyStandards.mavenExecutable": {
           "type": "string",
           "default": "mvn",
-          "description": "Ejecutable de Maven para /checkstyle (ej. 'mvn', './mvnw', '/usr/local/bin/mvn'). Default: 'mvn'."
+          "description": "Ejecutable de Maven para /checkstyle y /coverage (ej. 'mvn', './mvnw', '/usr/local/bin/mvn'). Default: 'mvn'."
+        },
+        "companyStandards.coverageThreshold": {
+          "type": "number",
+          "default": 60,
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Umbral mínimo de cobertura de líneas (%) para /coverage. Clases con cobertura inferior se marcan con ⚠️ y reciben sugerencias de tests. Default: 60."
         },
         "companyStandards.securityRisks": {
           "type": "array",
