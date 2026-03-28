@@ -3,7 +3,7 @@ import { log, logError } from "../logger";
 import { JiraClient, getConfiguredProjects } from "../jira/client";
 import { createKnowledgeProvider } from "../knowledge/KnowledgeProviderFactory";
 import { blocksToMarkdown } from "../notion/parser";
-import { resolvePageId, getActiveSpecialty, PageType } from "./specialtyResolver";
+import { resolvePageId, getActiveSpecialty, PageType } from "../agent/specialtyResolver";
 
 /**
  * Orchestrates the /new-feature guided workflow:

@@ -13,7 +13,10 @@
       "Bash(node:*)",
       "Bash(npm install:*)",
       "Bash(npm version:*)",
-      "Bash(grep -E \"\\\\.ts$\")"
+      "Bash(grep -E \"\\\\.ts$\")",
+      "Bash(npx vsce:*)",
+      "Bash(code:*)",
+      "Bash(grep -rn \"^import\" /Users/yegecali/Projects/vscode-custom-extension/src/agent/*.ts)"
     ]
   }
 }
