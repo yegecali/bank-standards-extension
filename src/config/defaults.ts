@@ -68,6 +68,12 @@ export const CACHE = {
 
   /** Max characters of page content per LLM chunk (kb search pagination) */
   CHUNK_CHARS: 6_000,
+
+  /** How many top-ranked pages to fetch and read for synthesis */
+  TOP_PAGES: 3,
+
+  /** Max characters per page when building synthesis context (leaves room for prompt overhead) */
+  MAX_PAGE_CHARS: 4_000,
 } as const;
 
 // ─── Jira ─────────────────────────────────────────────────────────────────────
