@@ -2,7 +2,7 @@
   "name": "company-coding-standard",
   "displayName": "Company Coding Standard",
   "description": "Define and enforce your company's development standards directly in VSCode — powered by your own knowledge base (Notion or Confluence). Naming conventions, test standards, project scaffolding, prompt library, Jira integration, and AI agent.",
-  "version": "0.0.38",
+  "version": "0.0.39",
   "publisher": "yemicanchari",
   "preview": true,
   "license": "MIT",
@@ -110,6 +110,10 @@
           {
             "name": "document",
             "description": "Documenta todos los métodos del proyecto en un archivo Markdown. Por cada método: descripción, parámetros, retorno, excepciones, a quién llama y quién lo llama. Escribe el resultado en docs/code-documentation.md"
+          },
+          {
+            "name": "security",
+            "description": "Analiza el proyecto en busca de vulnerabilidades de seguridad (OWASP Top 10 + riesgos configurables). Procesa en lotes con 2 iteraciones: detección → análisis profundo con soluciones. Escribe el reporte en docs/security-report.md"
           }
         ],
         "sampleRequests": [
@@ -246,6 +250,27 @@
           "type": "string",
           "default": "",
           "description": "Optional: Confluence space key to restrict /search results (e.g. TEAM, DEV). Leave empty to search all accessible spaces."
+        },
+        "companyStandards.securityRisks": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [
+            "SQL Injection — consultas construidas con concatenación de strings o sin parámetros preparados",
+            "XSS (Cross-Site Scripting) — datos del usuario renderizados sin sanitizar en HTML/JSON",
+            "Secrets y credenciales hardcodeadas — contraseñas, tokens, API keys, claves privadas en el código fuente",
+            "Autenticación insegura — manejo débil de contraseñas, sesiones sin expiración, tokens predecibles",
+            "Exposición de datos sensibles — PII, tokens o datos confidenciales en logs, respuestas de error o endpoints",
+            "IDOR / Autorización insuficiente — acceso a recursos sin verificar que el usuario actual es el propietario",
+            "Deserialización insegura — datos externos deserializados sin validación de tipo o schema",
+            "Validación de entrada insuficiente — datos del usuario usados directamente sin validar formato, longitud o tipo",
+            "Inyección de comandos — llamadas a shell, exec() o procesos con input del usuario sin sanitizar",
+            "Path Traversal — rutas de archivo construidas con input del usuario sin sanitizar",
+            "Configuración insegura — debug mode activo, CORS abierto, cabeceras de seguridad faltantes",
+            "Manejo inseguro de errores — stack traces, mensajes internos o información del sistema expuesta al cliente",
+            "CSRF — operaciones de escritura sin token de verificación de origen",
+            "Race conditions / TOCTOU — operaciones check-then-act sin sincronización"
+          ],
+          "description": "Lista de riesgos de seguridad que /security evaluará en el código. Cada entrada puede incluir descripción después de ' — '. Puedes agregar riesgos específicos de tu empresa."
         },
         "companyStandards.specialty": {
           "type": "string",
