@@ -2,7 +2,7 @@
   "name": "company-coding-standard",
   "displayName": "Company Coding Standard",
   "description": "Define and enforce your company's development standards directly in VSCode — powered by your own knowledge base (Notion or Confluence). Naming conventions, test standards, project scaffolding, prompt library, Jira integration, and AI agent.",
-  "version": "0.0.43",
+  "version": "0.0.44",
   "publisher": "yemicanchari",
   "preview": true,
   "license": "MIT",
@@ -114,6 +114,10 @@
           {
             "name": "security",
             "description": "Analiza el proyecto en busca de vulnerabilidades de seguridad (OWASP Top 10 + riesgos configurables). Procesa en lotes con 2 iteraciones: detección → análisis profundo con soluciones. Escribe el reporte en docs/security-report.md"
+          },
+          {
+            "name": "checkstyle",
+            "description": "Revisa y corrige todos los archivos Java: genera JavaDoc, arregla indentación y espaciado sin tocar la lógica. Luego valida con 'mvn checkstyle:check' e itera hasta limpiar los errores. Escribe el reporte en docs/checkstyle-report.md"
           }
         ],
         "sampleRequests": [
@@ -250,6 +254,16 @@
           "type": "string",
           "default": "",
           "description": "Optional: Confluence space key to restrict /search results (e.g. TEAM, DEV). Leave empty to search all accessible spaces."
+        },
+        "companyStandards.checkstyleConfigPath": {
+          "type": "string",
+          "default": "",
+          "description": "Ruta relativa al archivo checkstyle.xml desde la raíz del workspace (ej. 'config/checkstyle/checkstyle.xml'). Si está vacío, se busca automáticamente en ubicaciones comunes."
+        },
+        "companyStandards.mavenExecutable": {
+          "type": "string",
+          "default": "mvn",
+          "description": "Ejecutable de Maven para /checkstyle (ej. 'mvn', './mvnw', '/usr/local/bin/mvn'). Default: 'mvn'."
         },
         "companyStandards.securityRisks": {
           "type": "array",

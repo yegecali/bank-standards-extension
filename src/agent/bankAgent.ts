@@ -13,6 +13,7 @@ import { handleKbSearchCommand } from "../handlers/kbSearchHandler";
 import { handleExplainCommand } from "../handlers/explainHandler";
 import { handleDocumentCommand } from "../handlers/documentHandler";
 import { handleSecurityCommand } from "../handlers/securityHandler";
+import { handleCheckstyleCommand } from "../handlers/checkstyleHandler";
 import { isCreateIntent, createProjectFromNotion } from "./projectCreator";
 import { getStagedDiff } from "./gitHelper";
 import { BankPrompt } from "./BankPrompt";
@@ -252,6 +253,12 @@ function makeHandler(context: vscode.ExtensionContext): vscode.ChatRequestHandle
     if (request.command === "security") {
       await handleSecurityCommand(stream, request.model, token);
       return { metadata: { intent: "security" } };
+    }
+
+    // 0a0d — Handle /checkstyle command
+    if (request.command === "checkstyle") {
+      await handleCheckstyleCommand(stream, request.model, token);
+      return { metadata: { intent: "checkstyle" } };
     }
 
     // 0a1 — Handle /search command
