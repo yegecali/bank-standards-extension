@@ -2,7 +2,7 @@
   "name": "company-coding-standard",
   "displayName": "Company Coding Standard",
   "description": "Define and enforce your company's development standards directly in VSCode — powered by your own knowledge base (Notion or Confluence). Naming conventions, test standards, project scaffolding, prompt library, Jira integration, and AI agent.",
-  "version": "0.0.32",
+  "version": "0.0.36",
   "publisher": "yemicanchari",
   "preview": true,
   "license": "MIT",
@@ -98,6 +98,14 @@
           {
             "name": "setup",
             "description": "Genera una guía de setup del ambiente de desarrollo basada en los pasos definidos por tu empresa en el knowledge base. Lee el proyecto real (pom.xml, docker-compose, etc.) y adapta las instrucciones. Uso: /setup | /setup <guía> (ej: /setup maven, /setup docker)"
+          },
+          {
+            "name": "search",
+            "description": "Busca en tu base de conocimientos de Confluence con lenguaje natural y Copilot responde basándose en los resultados. Uso: /search <pregunta> (ej: /search cómo configurar kafka, /search proceso de deploy)"
+          },
+          {
+            "name": "explain",
+            "description": "Analiza el proyecto abierto y genera un diagrama Mermaid de los flujos principales. Procesa en lotes para proyectos grandes y unifica el resultado en un diagrama coherente."
           }
         ],
         "sampleRequests": [
@@ -229,6 +237,11 @@
           "type": "string",
           "default": "",
           "description": "Confluence API token (from id.atlassian.com/manage-profile/security/api-tokens)"
+        },
+        "companyStandards.confluenceSpaceKey": {
+          "type": "string",
+          "default": "",
+          "description": "Optional: Confluence space key to restrict /search results (e.g. TEAM, DEV). Leave empty to search all accessible spaces."
         },
         "companyStandards.specialty": {
           "type": "string",

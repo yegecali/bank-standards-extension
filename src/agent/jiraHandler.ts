@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { log, logError } from "../logger";
-import { JiraClient, JiraIssue, JiraComment, getConfiguredProjects } from "../jira/client";
+import { JiraClient, JiraIssue, JiraComment, JiraIssueSummary, getConfiguredProjects } from "../jira/client";
 
 const JIRA_CONFIG_HELP =
   `## ⚙️ Configura Jira primero\n\n` +
@@ -187,18 +187,18 @@ async function listAndPickIssue(stream: vscode.ChatResponseStream): Promise<void
     return;
   }
 
+  const jiraBase = (vscode.workspace.getConfiguration("companyStandards").get<string>("jiraUrl") ?? "").replace(/\/$/, "");
+
   stream.markdown(`## ${heading}\n\n`);
   stream.markdown(
-    `| Clave | Resumen | Asignado a | Tiempo en progreso |\n` +
-    `|---|---|---|---|\n`
+    `| Clave | Resumen | Asignado a |\n` +
+    `|---|---|---|\n`
   );
   for (const issue of issues) {
-    const timeLabel     = issue.timeInProgress ? `⏳ ${issue.timeInProgress}` : "—";
     const assigneeLabel = issue.assignee ? firstNameOnly(issue.assignee) : "Sin asignar";
     const summaryLabel  = truncateWords(issue.summary, 10);
-    stream.markdown(
-      `| ${issue.key} | ${summaryLabel} | ${assigneeLabel} | ${timeLabel} |\n`
-    );
+    const keyLink       = jiraBase ? `[${issue.key}](${jiraBase}/browse/${issue.key})` : issue.key;
+    stream.markdown(`| ${keyLink} | ${summaryLabel} | ${assigneeLabel} |\n`);
   }
   stream.markdown(`\n_Para crear una subtarea usa \`/jira create PROJ-123\`._\n`);
 
@@ -777,16 +777,18 @@ function renderSearchPage(
     ? `🔍 Resultados para "${query}" — ${total} encontradas (página ${page + 1})`
     : `🔍 Resultados — página ${page + 1}`;
 
+  const jiraBase = (vscode.workspace.getConfiguration("companyStandards").get<string>("jiraUrl") ?? "").replace(/\/$/, "");
+
   stream.markdown(`## ${heading}\n\n`);
   stream.markdown(
-    `| Clave | Resumen | Asignado a | Tiempo en progreso |\n` +
-    `|---|---|---|---|\n`
+    `| Clave | Resumen | Asignado a |\n` +
+    `|---|---|---|\n`
   );
   for (const issue of pageItems) {
-    const timeLabel     = issue.timeInProgress ? `⏳ ${issue.timeInProgress}` : "—";
     const assigneeLabel = issue.assignee ? firstNameOnly(issue.assignee) : "Sin asignar";
+    const keyLink       = jiraBase ? `[${issue.key}](${jiraBase}/browse/${issue.key})` : issue.key;
     stream.markdown(
-      `| ${issue.key} | ${truncateWords(issue.summary, 10)} | ${assigneeLabel} | ${timeLabel} |\n`
+      `| ${keyLink} | ${truncateWords(issue.summary, 10)} | ${assigneeLabel} |\n`
     );
   }
 

@@ -130,6 +130,81 @@ export class ConfluenceClient {
   }
 
   /**
+   * Lightweight CQL search — returns title, excerpt, and URL only (no body expansion).
+   * Use getPage() separately when you need full content.
+   */
+  async searchPagesMeta(query: string, limit = 10): Promise<Array<{
+    id: string;
+    title: string;
+    url: string;
+    excerpt: string;
+  }>> {
+    this.validateConfig();
+    const spaceKey = this.config.get<string>("confluenceSpaceKey") ?? "";
+    const spacePart = spaceKey ? ` AND space="${spaceKey}"` : "";
+    const cql = `type=page${spacePart} AND text~"${query.replace(/"/g, '\\"')}"`;
+    const url = `${this.baseUrl}/wiki/rest/api/content/search?cql=${encodeURIComponent(cql)}&limit=${limit}`;
+
+    log(`[ConfluenceClient] CQL meta-search → ${url}`);
+    try {
+      const res = await axios.get(url, { headers: this.headers() });
+      const results = res.data.results ?? [];
+      log(`[ConfluenceClient] CQL meta-search ← ${results.length} results`);
+      return results.map((r: Record<string, unknown>) => ({
+        id:      String(r["id"]),
+        title:   String(r["title"]),
+        url:     `${this.baseUrl}/wiki${(r["_links"] as Record<string, unknown> | undefined)?.["webui"] ?? ""}`,
+        excerpt: String((r["excerpt"] as string | undefined) ?? ""),
+      }));
+    } catch (err) {
+      throw this.wrapError(err, url);
+    }
+  }
+
+  /**
+   * Full-text search using Confluence CQL — includes ADF body.
+   * Use searchPagesMeta() for listing; use this only when you need body content inline.
+   */
+  async searchPages(query: string, limit = 5): Promise<Array<{
+    id: string;
+    title: string;
+    url: string;
+    excerpt: string;
+    adf: AdfDoc;
+  }>> {
+    this.validateConfig();
+    const spaceKey = this.config.get<string>("confluenceSpaceKey") ?? "";
+    const spacePart = spaceKey ? ` AND space="${spaceKey}"` : "";
+    const cql = `type=page${spacePart} AND text~"${query.replace(/"/g, '\\"')}"`;
+    const url = `${this.baseUrl}/wiki/rest/api/content/search?cql=${encodeURIComponent(cql)}&limit=${limit}&expand=body.atlas_doc_format`;
+
+    log(`[ConfluenceClient] CQL search → ${url}`);
+    try {
+      const res = await axios.get(url, { headers: this.headers() });
+      const results = res.data.results ?? [];
+      log(`[ConfluenceClient] CQL search ← ${results.length} results`);
+
+      return results.map((r: Record<string, unknown>) => {
+        const bodyRaw = (r["body"] as Record<string, unknown> | undefined)
+          ?.["atlas_doc_format"] as Record<string, unknown> | undefined;
+        let adf: AdfDoc = { version: 1, type: "doc", content: [] };
+        if (bodyRaw?.["value"]) {
+          try { adf = JSON.parse(String(bodyRaw["value"])); } catch { /* skip */ }
+        }
+        return {
+          id:      String(r["id"]),
+          title:   String(r["title"]),
+          url:     `${this.baseUrl}/wiki${(r["_links"] as Record<string, unknown> | undefined)?.["webui"] ?? ""}`,
+          excerpt: String((r["excerpt"] as string | undefined) ?? ""),
+          adf,
+        };
+      });
+    } catch (err) {
+      throw this.wrapError(err, url);
+    }
+  }
+
+  /**
    * Lists pages inside a Confluence space by space ID.
    */
   async getPagesInSpace(spaceId: string): Promise<Array<{ id: string; title: string }>> {

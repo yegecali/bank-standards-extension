@@ -9,6 +9,8 @@ import { handleJiraCommand } from "./jiraHandler";
 import { handleProjectCommand } from "./projectActionHandler";
 import { handleOnboardingCommand } from "./onboardingHandler";
 import { handleSetupCommand } from "./setupHandler";
+import { handleKbSearchCommand } from "./kbSearchHandler";
+import { handleExplainCommand } from "./explainHandler";
 import { isCreateIntent, createProjectFromNotion } from "./projectCreator";
 import { getStagedDiff } from "./gitHelper";
 import { BankPrompt } from "./BankPrompt";
@@ -230,6 +232,18 @@ function makeHandler(context: vscode.ExtensionContext): vscode.ChatRequestHandle
     // 0 — Handle /specialty command
     if (request.command === "specialty") {
       return handleSpecialtyCommand(userPrompt, stream);
+    }
+
+    // 0a0 — Handle /explain command
+    if (request.command === "explain") {
+      await handleExplainCommand(stream, request.model, token);
+      return { metadata: { intent: "explain" } };
+    }
+
+    // 0a1 — Handle /search command
+    if (request.command === "search") {
+      await handleKbSearchCommand(userPrompt, stream, request.model, token);
+      return { metadata: { intent: "search" } };
     }
 
     // 0a2 — Handle /onboarding command
