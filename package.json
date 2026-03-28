@@ -2,7 +2,7 @@
   "name": "company-coding-standard",
   "displayName": "Company Coding Standard",
   "description": "Define and enforce your company's development standards directly in VSCode — powered by your own knowledge base (Notion or Confluence). Naming conventions, test standards, project scaffolding, prompt library, Jira integration, and AI agent.",
-  "version": "0.0.37",
+  "version": "0.0.38",
   "publisher": "yemicanchari",
   "preview": true,
   "license": "MIT",
@@ -105,7 +105,11 @@
           },
           {
             "name": "explain",
-            "description": "Analiza el proyecto abierto y genera un diagrama Mermaid de los flujos principales. Procesa en lotes para proyectos grandes y unifica el resultado en un diagrama coherente."
+            "description": "Analiza el proyecto abierto y genera diagramas de secuencia Mermaid por endpoint. Lee controladores, contratos OpenAPI y servicios en 2 iteraciones. Escribe el resultado en docs/sequence-diagrams.md"
+          },
+          {
+            "name": "document",
+            "description": "Documenta todos los métodos del proyecto en un archivo Markdown. Por cada método: descripción, parámetros, retorno, excepciones, a quién llama y quién lo llama. Escribe el resultado en docs/code-documentation.md"
           }
         ],
         "sampleRequests": [

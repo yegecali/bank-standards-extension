@@ -11,6 +11,7 @@ import { handleOnboardingCommand } from "./onboardingHandler";
 import { handleSetupCommand } from "./setupHandler";
 import { handleKbSearchCommand } from "./kbSearchHandler";
 import { handleExplainCommand } from "./explainHandler";
+import { handleDocumentCommand } from "./documentHandler";
 import { isCreateIntent, createProjectFromNotion } from "./projectCreator";
 import { getStagedDiff } from "./gitHelper";
 import { BankPrompt } from "./BankPrompt";
@@ -238,6 +239,12 @@ function makeHandler(context: vscode.ExtensionContext): vscode.ChatRequestHandle
     if (request.command === "explain") {
       await handleExplainCommand(stream, request.model, token);
       return { metadata: { intent: "explain" } };
+    }
+
+    // 0a0b — Handle /document command
+    if (request.command === "document") {
+      await handleDocumentCommand(stream, request.model, token);
+      return { metadata: { intent: "document" } };
     }
 
     // 0a1 — Handle /search command
