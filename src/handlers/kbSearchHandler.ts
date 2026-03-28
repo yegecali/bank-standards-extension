@@ -2,11 +2,12 @@ import * as vscode from "vscode";
 import { ConfluenceClient } from "../confluence/client";
 import { adfBlocksToText } from "../confluence/adfToText";
 import { log, logError } from "../logger";
+import { CACHE } from "../config/defaults";
 
 // ─── Session caches ───────────────────────────────────────────────────────────
 
-const CACHE_TTL_MS  = 15 * 60 * 1000;   // 15 min
-const CHUNK_CHARS   = 6_000;             // chars of source text per LLM call
+const CACHE_TTL_MS = CACHE.TTL_MS;
+const CHUNK_CHARS  = CACHE.CHUNK_CHARS;
 
 interface SearchHit {
   index: number;   // 1-based display number

@@ -1,20 +1,8 @@
 import * as vscode from "vscode";
 import { log, logError } from "../logger";
+import { BATCH, EXCLUDE_GLOB, SRC_EXTENSIONS, LAYER_ORDER } from "../config/defaults";
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-/** Files per LLM batch — kept small to avoid context saturation */
-const FILES_PER_BATCH  = 4;
-const MAX_CHARS_FILE   = 4_500;   // chars per source file
-const MAX_FILES        = 100;
-
-const EXCLUDE_GLOB = "{**/node_modules/**,**/target/**,**/dist/**,**/out/**,**/.git/**,**/__pycache__/**,**/build/**,**/.next/**}";
-const SRC_EXTS     = [".java", ".ts", ".kt", ".py", ".cs", ".go", ".js"];
-
-const OUTPUT_PATH  = "docs/code-documentation.md";
-
-// Priority layer names for grouping output
-const LAYER_ORDER = ["controller", "resource", "router", "service", "usecase", "repository", "gateway", "client", "util", "helper", "other"];
+const OUTPUT_PATH = "docs/code-documentation.md";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -60,13 +48,13 @@ export async function handleDocumentCommand(
 
   // Group by layer for structured output
   const grouped = groupByLayer(files);
-  const batches = chunk(files, FILES_PER_BATCH);
+  const batches = chunk(files, BATCH.FILES_PER_BATCH);
 
   stream.markdown(
     `## 📝 Documentando el proyecto\n\n` +
     `| | |\n|---|---|\n` +
     `| Archivos encontrados | **${files.length}** |\n` +
-    `| Lotes | **${batches.length}** (${FILES_PER_BATCH} archivos c/u) |\n` +
+    `| Lotes | **${batches.length}** (${BATCH.FILES_PER_BATCH} archivos c/u) |\n` +
     `| Capas | ${[...grouped.keys()].join(", ")} |\n\n` +
     `Se procesará en **2 iteraciones**: primero documenta cada método en detalle, luego enriquece con referencias cruzadas.\n\n`
   );
@@ -277,9 +265,9 @@ async function collectSourceFiles(): Promise<SourceFile[]> {
   let uris: vscode.Uri[];
   try {
     uris = await vscode.workspace.findFiles(
-      `**/*.{${SRC_EXTS.map((e) => e.slice(1)).join(",")}}`,
+      `**/*.{${SRC_EXTENSIONS.map((e) => e.slice(1)).join(",")}}`,
       EXCLUDE_GLOB,
-      MAX_FILES
+      BATCH.MAX_FILES
     );
   } catch { return []; }
 
@@ -293,10 +281,10 @@ async function collectSourceFiles(): Promise<SourceFile[]> {
   scored.sort((a, b) => b.score - a.score);
 
   const result: SourceFile[] = [];
-  for (const { uri } of scored.slice(0, MAX_FILES)) {
+  for (const { uri } of scored.slice(0, BATCH.MAX_FILES)) {
     try {
       const bytes   = await vscode.workspace.fs.readFile(uri);
-      const content = Buffer.from(bytes).toString("utf-8").slice(0, MAX_CHARS_FILE);
+      const content = Buffer.from(bytes).toString("utf-8").slice(0, BATCH.MAX_CHARS_FILE);
       const name    = baseName(uri).replace(/\.[^.]+$/, "").toLowerCase();
       const layer   = detectLayer(name);
       result.push({ uri, relPath: vscode.workspace.asRelativePath(uri), name, layer, content });

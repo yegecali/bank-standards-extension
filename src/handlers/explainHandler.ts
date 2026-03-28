@@ -1,18 +1,8 @@
 import * as vscode from "vscode";
 import { log, logError } from "../logger";
+import { BATCH, EXCLUDE_GLOB, SRC_EXTENSIONS } from "../config/defaults";
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-/** Controllers per LLM batch — kept small to avoid context saturation */
-const CONTROLLER_BATCH   = 3;
-const MAX_CONTROLLER     = 5_000;   // chars per controller file
-const MAX_SERVICE        = 3_000;   // chars per service file
-const MAX_OPENAPI        = 6_000;   // chars for the combined OpenAPI spec
-
-const EXCLUDE_GLOB = "{**/node_modules/**,**/target/**,**/dist/**,**/out/**,**/.git/**,**/__pycache__/**,**/build/**,**/.next/**}";
-const SRC_EXTS     = [".java", ".ts", ".kt", ".py", ".cs", ".go", ".js"];
-
-const OUTPUT_PATH  = "docs/sequence-diagrams.md";
+const OUTPUT_PATH = "docs/sequence-diagrams.md";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -69,14 +59,14 @@ export async function handleExplainCommand(
     return;
   }
 
-  const batches = chunk(controllers, CONTROLLER_BATCH);
+  const batches = chunk(controllers, BATCH.CONTROLLERS_PER_BATCH);
 
   stream.markdown(
     `## 🔍 Generando diagramas de secuencia\n\n` +
     `| | |\n|---|---|\n` +
     `| Controladores | **${controllers.length}** |\n` +
     `| Servicios | **${services.length}** |\n` +
-    `| Lotes | **${batches.length}** (${CONTROLLER_BATCH} controladores c/u) |\n` +
+    `| Lotes | **${batches.length}** (${BATCH.CONTROLLERS_PER_BATCH} controladores c/u) |\n` +
     `| OpenAPI | ${openapiText ? "✅ encontrado" : "⚠️ no encontrado"} |\n\n` +
     `Se procesará en **2 iteraciones** para maximizar la calidad del diagrama.\n\n`
   );
@@ -304,10 +294,10 @@ async function findControllers(): Promise<ControllerFile[]> {
   const result: ControllerFile[] = [];
 
   for (const uri of uris) {
-    if (!SRC_EXTS.includes(extOf(uri))) { continue; }
+    if (!SRC_EXTENSIONS.includes(extOf(uri))) { continue; }
     try {
       const bytes   = await vscode.workspace.fs.readFile(uri);
-      const content = Buffer.from(bytes).toString("utf-8").slice(0, MAX_CONTROLLER);
+      const content = Buffer.from(bytes).toString("utf-8").slice(0, BATCH.MAX_CHARS_CONTROLLER);
       result.push({ uri, relPath: vscode.workspace.asRelativePath(uri), content });
     } catch { /* skip */ }
   }
@@ -328,10 +318,10 @@ async function findServices(): Promise<ServiceFile[]> {
   const result: ServiceFile[] = [];
 
   for (const uri of uris) {
-    if (!SRC_EXTS.includes(extOf(uri))) { continue; }
+    if (!SRC_EXTENSIONS.includes(extOf(uri))) { continue; }
     try {
       const bytes   = await vscode.workspace.fs.readFile(uri);
-      const content = Buffer.from(bytes).toString("utf-8").slice(0, MAX_SERVICE);
+      const content = Buffer.from(bytes).toString("utf-8").slice(0, BATCH.MAX_CHARS_SERVICE);
       const name    = baseName(uri).replace(/\.[^.]+$/, "").toLowerCase();
       result.push({ uri, relPath: vscode.workspace.asRelativePath(uri), name, content });
     } catch { /* skip */ }
@@ -356,7 +346,7 @@ async function findOpenApiContent(): Promise<string> {
   for (const uri of uris.slice(0, 3)) {
     try {
       const bytes   = await vscode.workspace.fs.readFile(uri);
-      const content = Buffer.from(bytes).toString("utf-8").slice(0, MAX_OPENAPI);
+      const content = Buffer.from(bytes).toString("utf-8").slice(0, BATCH.MAX_CHARS_OPENAPI);
       parts.push(`# ${vscode.workspace.asRelativePath(uri)}\n${content}`);
     } catch { /* skip */ }
   }

@@ -1,34 +1,8 @@
 import * as vscode from "vscode";
 import { log, logError } from "../logger";
+import { BATCH, EXCLUDE_GLOB_NO_TESTS, SRC_EXTENSIONS_FULL, DEFAULT_SECURITY_RISKS } from "../config/defaults";
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const FILES_PER_BATCH  = 4;
-const MAX_CHARS_FILE   = 4_500;
-const MAX_FILES        = 100;
-
-const EXCLUDE_GLOB = "{**/node_modules/**,**/target/**,**/dist/**,**/out/**,**/.git/**,**/__pycache__/**,**/build/**,**/.next/**,**/test/**,**/__tests__/**,**/spec/**}";
-const SRC_EXTS     = [".java", ".ts", ".kt", ".py", ".cs", ".go", ".js", ".xml", ".yaml", ".yml", ".properties", ".env"];
-
-const OUTPUT_PATH  = "docs/security-report.md";
-
-const DEFAULT_RISKS = [
-  "SQL Injection — consultas construidas con concatenación de strings o sin parámetros preparados",
-  "XSS (Cross-Site Scripting) — datos del usuario renderizados sin sanitizar en HTML/JSON",
-  "Secrets y credenciales hardcodeadas — contraseñas, tokens, API keys, claves privadas en el código fuente",
-  "Autenticación insegura — manejo débil de contraseñas, sesiones sin expiración, tokens predecibles",
-  "Exposición de datos sensibles — PII, tokens o datos confidenciales en logs, respuestas de error o endpoints",
-  "IDOR / Autorización insuficiente — acceso a recursos sin verificar que el usuario actual es el propietario",
-  "Deserialización insegura — datos externos deserializados sin validación de tipo o schema",
-  "Validación de entrada insuficiente — datos del usuario usados directamente sin validar formato, longitud o tipo",
-  "Inyección de comandos — llamadas a shell, exec() o procesos con input del usuario sin sanitizar",
-  "Path Traversal — rutas de archivo construidas con input del usuario sin sanitizar",
-  "Configuración insegura — debug mode activo, CORS abierto, cabeceras de seguridad faltantes",
-  "Dependencias vulnerables — imports o versiones conocidas por tener CVEs activos",
-  "Manejo inseguro de errores — stack traces, mensajes internos o información del sistema expuesta al cliente",
-  "CSRF — operaciones de escritura sin token de verificación de origen",
-  "Race conditions / TOCTOU — operaciones check-then-act sin sincronización",
-];
+const OUTPUT_PATH = "docs/security-report.md";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -70,7 +44,7 @@ export async function handleSecurityCommand(
 
   // ── Load configured risks ─────────────────────────────────────────────────
   const config = vscode.workspace.getConfiguration("companyStandards");
-  const risks: string[] = config.get<string[]>("securityRisks") ?? DEFAULT_RISKS;
+  const risks: string[] = config.get<string[]>("securityRisks") ?? DEFAULT_SECURITY_RISKS;
 
   // ── Discovery ─────────────────────────────────────────────────────────────
   stream.progress("Buscando archivos fuente para análisis de seguridad…");
@@ -81,13 +55,13 @@ export async function handleSecurityCommand(
     return;
   }
 
-  const batches = chunk(files, FILES_PER_BATCH);
+  const batches = chunk(files, BATCH.FILES_PER_BATCH);
 
   stream.markdown(
     `## 🔐 Análisis de seguridad\n\n` +
     `| | |\n|---|---|\n` +
     `| Archivos analizados | **${files.length}** |\n` +
-    `| Lotes | **${batches.length}** (${FILES_PER_BATCH} archivos c/u) |\n` +
+    `| Lotes | **${batches.length}** (${BATCH.FILES_PER_BATCH} archivos c/u) |\n` +
     `| Riesgos configurados | **${risks.length}** |\n\n` +
     `**Riesgos a evaluar:**\n` +
     risks.map((r) => `- ${r.split(" — ")[0]}`).join("\n") +
@@ -468,9 +442,9 @@ async function collectSourceFiles(): Promise<SourceFile[]> {
   let uris: vscode.Uri[];
   try {
     uris = await vscode.workspace.findFiles(
-      `**/*.{${SRC_EXTS.map((e) => e.slice(1)).join(",")}}`,
-      EXCLUDE_GLOB,
-      MAX_FILES
+      `**/*.{${SRC_EXTENSIONS_FULL.map((e) => e.slice(1)).join(",")}}`,
+      EXCLUDE_GLOB_NO_TESTS,
+      BATCH.MAX_FILES
     );
   } catch { return []; }
 
@@ -487,10 +461,10 @@ async function collectSourceFiles(): Promise<SourceFile[]> {
   uris.sort((a, b) => priorityScore(b) - priorityScore(a));
 
   const result: SourceFile[] = [];
-  for (const uri of uris.slice(0, MAX_FILES)) {
+  for (const uri of uris.slice(0, BATCH.MAX_FILES)) {
     try {
       const bytes   = await vscode.workspace.fs.readFile(uri);
-      const content = Buffer.from(bytes).toString("utf-8").slice(0, MAX_CHARS_FILE);
+      const content = Buffer.from(bytes).toString("utf-8").slice(0, BATCH.MAX_CHARS_FILE);
       const name    = uri.path.split("/").pop()?.replace(/\.[^.]+$/, "") ?? "";
       result.push({ uri, relPath: vscode.workspace.asRelativePath(uri), name, content });
     } catch { /* skip */ }

@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { log, logError } from "../logger";
 import { JiraClient, JiraIssue, JiraComment, JiraIssueSummary, getConfiguredProjects } from "../jira/client";
+import { JIRA as JIRA_DEFAULTS } from "../config/defaults";
 
 const JIRA_CONFIG_HELP =
   `## ⚙️ Configura Jira primero\n\n` +
@@ -647,7 +648,7 @@ async function updateDocumentationInteractive(
 /** In-memory cache: cacheKey → ordered list of matched issues */
 const searchCache = new Map<string, JiraIssueSummary[]>();
 
-const PAGE_SIZE = 8;
+const PAGE_SIZE = JIRA_DEFAULTS.PAGE_SIZE;
 
 /**
  * Fetches all issues, asks the LLM to rank them by relevance to `query`,
