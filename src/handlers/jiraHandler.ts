@@ -1,7 +1,6 @@
 import * as vscode from "vscode";
 import { log, logError } from "../logger";
-import { JiraClient, JiraIssue, JiraComment, JiraIssueSummary, getConfiguredProjects } from "../jira/client";
-import { JIRA as JIRA_DEFAULTS } from "../config/defaults";
+import { JiraClient, JiraIssueSummary, JiraSubtask, getConfiguredProjects } from "../jira/client";
 
 const JIRA_CONFIG_HELP =
   `## ⚙️ Configura Jira primero\n\n` +
@@ -16,23 +15,18 @@ const JIRA_CONFIG_HELP =
 const USAGE_HELP =
   `ℹ️ **Uso de \`/jira\`:**\n\n` +
   `| Comando | Acción |\n|---|---|\n` +
-  `| \`/jira\` | Listar issues en progreso de los proyectos configurados |\n` +
-  `| \`/jira <texto>\` | Buscar issues por descripción usando IA (ej: \`/jira implementar redis\`) |\n` +
-  `| \`/jira PROJ-123\` | Ver detalle de una issue |\n` +
-  `| \`/jira subtasks PROJ-123\` | Listar mis subtareas asignadas en una issue |\n` +
-  `| \`/jira update PROJ-123\` | Actualizar documentación (descripción, comentarios) |\n` +
-  `| \`/jira create PROJ-123\` | Crear una subtarea en una issue |`;
+  `| \`/jira\` | Flujo guiado: ver issues → elegir → subtareas, crear o actualizar estado |`;
 
 /**
  * Main handler for the @company /jira command.
- * Routes to sub-actions based on the user argument.
+ * All interactions are guided via QuickPick and InputBox — minimal chat output.
  */
 export async function handleJiraCommand(
   userArg: string,
   stream: vscode.ChatResponseStream,
   _context: vscode.ExtensionContext,
   token: vscode.CancellationToken,
-  model?: vscode.LanguageModelChat
+  _model?: vscode.LanguageModelChat
 ): Promise<void> {
   const config = vscode.workspace.getConfiguration("companyStandards");
   const jiraUrl   = config.get<string>("jiraUrl") ?? "";
@@ -44,242 +38,133 @@ export async function handleJiraCommand(
     return;
   }
 
-  const arg = userArg.trim();
+  const arg = userArg.trim().toLowerCase();
 
-  // Route by argument pattern
-  if (!arg || arg.toLowerCase() === "list") {
-    await listAndPickIssue(stream);
-    return;
-  }
-
-  const issueKeyPattern = /^[A-Z][A-Z0-9]+-\d+$/i;
-
-  if (issueKeyPattern.test(arg)) {
-    await showIssueDetail(arg.toUpperCase(), stream);
-    return;
-  }
-
-  const subtasksMatch = arg.match(/^subtasks\s+([A-Z][A-Z0-9]+-\d+)$/i);
-  if (subtasksMatch) {
-    await listSubtasks(subtasksMatch[1].toUpperCase(), stream);
-    return;
-  }
-
-  const createMatch = arg.match(/^create\s+([A-Z][A-Z0-9]+-\d+)$/i);
-  if (createMatch) {
-    await createSubtaskInteractive(createMatch[1].toUpperCase(), stream);
-    return;
-  }
-
-  const updateMatch = arg.match(/^update\s+([A-Z][A-Z0-9]+-\d+)$/i);
-  if (updateMatch) {
-    await updateDocumentationInteractive(updateMatch[1].toUpperCase(), stream);
-    return;
-  }
-
-  // Page navigation: "more <cacheKey> <page>"
-  const moreMatch = arg.match(/^more\s+(\S+)\s+(\d+)$/i);
-  if (moreMatch) {
-    await showSearchPage(moreMatch[1], parseInt(moreMatch[2], 10), stream);
-    return;
-  }
-
-  // Any other text → semantic search via LLM
-  if (model) {
-    await handleJiraSearch(arg, stream, model, token);
+  if (!arg || arg === "list") {
+    await guidedFlow(stream, token);
     return;
   }
 
   stream.markdown(USAGE_HELP);
 }
 
-// ─── Formatting helpers ───────────────────────────────────────────────────────
+// ─── Guided flow ─────────────────────────────────────────────────────────────
 
 /**
- * Reads the subtask age alarm threshold in hours from settings.
- * Falls back to subtaskAgeThresholdDays * 24 for backward compatibility.
- * Default: 72 hours (3 days).
+ * Main guided interaction:
+ * 1. Fetch and show compact issues table
+ * 2. QuickPick: select an issue
+ * 3. QuickPick: choose action (subtasks / create / update status)
  */
-function getSubtaskAgeThresholdHours(): number {
-  const config = vscode.workspace.getConfiguration("companyStandards");
-  const hours = config.get<number>("subtaskAgeThresholdHours");
-  if (hours !== undefined && hours !== null) { return hours; }
-  // backward compat: if only days was set, convert
-  const days = config.get<number>("subtaskAgeThresholdDays");
-  if (days !== undefined && days !== null) { return days * 24; }
-  return 72;
-}
+async function guidedFlow(
+  stream: vscode.ChatResponseStream,
+  token: vscode.CancellationToken
+): Promise<void> {
+  const config    = vscode.workspace.getConfiguration("companyStandards");
+  const customJql = (config.get<string>("jiraJql") ?? "").trim();
+  const jiraBase  = (config.get<string>("jiraUrl") ?? "").replace(/\/$/, "");
+  const client    = new JiraClient();
 
-/**
- * Returns true if the subtask was created more than `thresholdHours` hours ago.
- * Returns false if `createdRaw` is null/invalid.
- */
-function isOverThreshold(createdRaw: string | null | undefined, thresholdHours: number): boolean {
-  if (!createdRaw) { return false; }
-  const ms = Date.now() - new Date(createdRaw).getTime();
-  if (isNaN(ms) || ms < 0) { return false; }
-  return ms / 3_600_000 > thresholdHours;
-}
+  // ── 1. Fetch issues ──────────────────────────────────────────────────────
+  stream.progress("Buscando issues en progreso…");
 
-/** Returns the first word of a full name (e.g. "Jose Luis Cacsire" → "Jose") */
-function firstNameOnly(fullName: string): string {
-  if (!fullName || fullName === "—") return "—";
-  return fullName.trim().split(/\s+/)[0];
-}
-
-/**
- * Truncates a string to the first `max` words.
- * If truncated, appends "...".
- */
-function truncateWords(text: string, max: number): string {
-  const words = text.trim().split(/\s+/);
-  if (words.length <= max) return text;
-  return words.slice(0, max).join(" ") + "...";
-}
-
-// ─── Sub-actions ─────────────────────────────────────────────────────────────
-
-/**
- * Lists issues using a custom JQL (if configured) or the default project/status filter.
- * Renders results as a markdown table.
- */
-async function listAndPickIssue(stream: vscode.ChatResponseStream): Promise<void> {
-  const config     = vscode.workspace.getConfiguration("companyStandards");
-  const customJql  = (config.get<string>("jiraJql") ?? "").trim();
-  const client     = new JiraClient();
-  let issues;
-  let heading: string;
-
-  if (customJql) {
-    stream.progress(`Ejecutando JQL configurado…`);
-    log(`[JiraHandler] Using custom JQL: ${customJql}`);
-    try {
+  let issues: JiraIssueSummary[];
+  try {
+    if (customJql) {
+      log(`[JiraHandler] Using custom JQL: ${customJql}`);
       issues = await client.searchByJql(customJql);
-    } catch (err: unknown) {
-      logError("[JiraHandler] Failed to execute custom JQL", err);
-      const msg = err instanceof Error ? err.message : String(err);
-      stream.markdown(`❌ Error ejecutando el JQL configurado: **${msg}**\n\n_Revisa \`companyStandards.jiraJql\` en tus settings._`);
-      return;
-    }
-    heading = `📋 Resultados de JQL (${issues.length})`;
-  } else {
-    const projects = getConfiguredProjects();
-    if (projects.length === 0) {
-      stream.markdown(
-        `⚠️ No hay proyectos de Jira configurados.\n\n` +
-        `Configura \`companyStandards.jiraProject\` o \`companyStandards.jiraJql\` en tus settings.`
-      );
-      return;
-    }
-    stream.progress(`Cargando issues de ${projects.join(", ")}…`);
-    try {
+    } else {
+      const projects = getConfiguredProjects();
+      if (projects.length === 0) {
+        stream.markdown(
+          `⚠️ No hay proyectos de Jira configurados.\n\n` +
+          `Configura \`companyStandards.jiraProject\` o \`companyStandards.jiraJql\` en tus settings.`
+        );
+        return;
+      }
       issues = await client.listIssues(projects);
-    } catch (err: unknown) {
-      logError("[JiraHandler] Failed to list issues", err);
-      const msg = err instanceof Error ? err.message : String(err);
-      stream.markdown(`❌ No pude obtener las issues de Jira: **${msg}**`);
-      return;
     }
-    heading = `📋 Issues en progreso — ${projects.join(", ")} (${issues.length})`;
+  } catch (err: unknown) {
+    logError("[JiraHandler] Failed to list issues", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    stream.markdown(`❌ No pude obtener las issues de Jira: **${msg}**`);
+    return;
   }
 
   if (issues.length === 0) {
-    stream.markdown(`ℹ️ La consulta no devolvió resultados.`);
+    stream.markdown(`ℹ️ No hay issues en progreso en los proyectos configurados.`);
     return;
   }
 
-  const jiraBase = (vscode.workspace.getConfiguration("companyStandards").get<string>("jiraUrl") ?? "").replace(/\/$/, "");
-
-  stream.markdown(`## ${heading}\n\n`);
-  stream.markdown(
-    `| Clave | Resumen | Asignado a |\n` +
-    `|---|---|---|\n`
-  );
-  for (const issue of issues) {
-    const assigneeLabel = issue.assignee ? firstNameOnly(issue.assignee) : "Sin asignar";
-    const summaryLabel  = truncateWords(issue.summary, 10);
-    const keyLink       = jiraBase ? `[${issue.key}](${jiraBase}/browse/${issue.key})` : issue.key;
-    stream.markdown(`| ${keyLink} | ${summaryLabel} | ${assigneeLabel} |\n`);
+  // ── 2. Show compact table (max 8 rows) ──────────────────────────────────
+  const displayed = issues.slice(0, 8);
+  stream.markdown(issueTable(displayed, jiraBase));
+  if (issues.length > 8) {
+    stream.markdown(`_Mostrando 8 de ${issues.length} issues. Selecciona una en el menú._\n\n`);
   }
-  stream.markdown(`\n_Para crear una subtarea usa \`/jira create PROJ-123\`._\n`);
 
-  log(`[JiraHandler] Issues listed: ${issues.length}`);
-}
+  // ── 3. QuickPick: select issue ───────────────────────────────────────────
+  interface IssuePickItem extends vscode.QuickPickItem {
+    issueKey: string;
+  }
 
-/**
- * Fetches and renders full issue detail including subtasks and time metrics.
- */
-async function showIssueDetail(issueKey: string, stream: vscode.ChatResponseStream): Promise<void> {
-  stream.progress(`Cargando detalle de ${issueKey}…`);
+  const issueItems: IssuePickItem[] = issues.map((i) => ({
+    label:       `$(issues) ${i.key}`,
+    description: i.status,
+    detail:      truncateWords(i.summary, 12),
+    issueKey:    i.key,
+  }));
 
-  const client = new JiraClient();
-  let issue: JiraIssue;
-  try {
-    issue = await client.getIssue(issueKey);
-  } catch (err: unknown) {
-    logError(`[JiraHandler] Failed to fetch issue ${issueKey}`, err);
-    const msg = err instanceof Error ? err.message : String(err);
-    stream.markdown(`❌ No pude cargar la issue **${issueKey}**: ${msg}`);
+  const picked = await vscode.window.showQuickPick(issueItems, {
+    title:         "Selecciona una issue",
+    placeHolder:   "Escribe para filtrar…",
+    matchOnDetail: true,
+  });
+
+  if (!picked) {
+    stream.markdown("_Operación cancelada._");
     return;
   }
 
-  const labelsStr    = issue.labels.length ? issue.labels.join(", ") : "—";
-  const spStr        = issue.storyPoints != null ? String(issue.storyPoints) : "—";
-  const inProgressStr = issue.timeInProgress ? `⏳ ${issue.timeInProgress}` : "—";
+  const issueKey = picked.issueKey;
 
-  stream.markdown(
-    `## 📋 ${issue.key}: ${issue.summary}\n\n` +
-    `| Campo | Valor |\n|---|---|\n` +
-    `| **Estado** | ${issue.status} |\n` +
-    `| **Prioridad** | ${issue.priority} |\n` +
-    `| **Story Points** | ${spStr} |\n` +
-    `| **Labels** | ${labelsStr} |\n` +
-    `| **Tiempo abierto** | 📅 ${issue.timeOpen} |\n` +
-    `| **Tiempo en progreso** | ${inProgressStr} |\n\n` +
-    (issue.description
-      ? `### Descripción\n\n${issue.description}\n\n`
-      : "_Sin descripción._\n\n")
-  );
-
-  // Subtasks table
-  if (issue.subtasks.length > 0) {
-    const threshold    = getSubtaskAgeThresholdHours();
-    const criticalKeys = issue.subtasks.filter((st) => isOverThreshold(st.createdRaw, threshold)).map((st) => st.key);
-
-    if (criticalKeys.length > 0) {
-      stream.markdown(
-        `> 🚨 **${criticalKeys.length} subtarea(s) crítica(s)** llevan más de **${threshold}h** abiertas: ` +
-        criticalKeys.join(", ") + `\n\n`
-      );
+  // ── 4. QuickPick: choose action ──────────────────────────────────────────
+  const action = await vscode.window.showQuickPick(
+    [
+      { label: "$(list-unordered) Ver mis subtareas",           value: "subtasks" },
+      { label: "$(add) Crear subtarea",                         value: "create"   },
+      { label: "$(sync) Actualizar estado de subtarea",         value: "status"   },
+    ],
+    {
+      title:       `¿Qué quieres hacer con ${issueKey}?`,
+      placeHolder: "Selecciona una acción…",
     }
+  );
 
-    stream.markdown(
-      `### Subtareas (${issue.subtasks.length})\n\n` +
-      `| Clave | Resumen | Estado | Tiempo abierto |\n` +
-      `|---|---|---|---|\n` +
-      issue.subtasks.map((st) => {
-        const critical = isOverThreshold(st.createdRaw, threshold);
-        const timeCell = critical ? `🚨 **${st.timeOpen}**` : `📅 ${st.timeOpen}`;
-        return `| ${st.key} | ${truncateWords(st.summary, 10)} | ${st.status} | ${timeCell} |`;
-      }).join("\n") +
-      "\n\n"
-    );
-  } else {
-    stream.markdown(`_Esta issue no tiene subtareas._\n\n`);
+  if (!action) {
+    stream.markdown("_Operación cancelada._");
+    return;
   }
 
-  stream.button({ title: `Crear subtarea en ${issue.key}`, command: "companyStandards.refreshStandards" });
-  log(`[JiraHandler] Issue detail rendered: ${issueKey}`);
+  if (action.value === "subtasks") {
+    await showMySubtasks(issueKey, stream);
+  } else if (action.value === "create") {
+    await createSubtaskInteractive(issueKey, stream, jiraBase);
+  } else if (action.value === "status") {
+    await updateStatusInteractive(issueKey, stream, jiraBase, token);
+  }
 }
 
-/**
- * Lists subtasks of a specific issue assigned to the current user.
- */
-async function listSubtasks(issueKey: string, stream: vscode.ChatResponseStream): Promise<void> {
+// ─── Action: Ver subtareas ────────────────────────────────────────────────────
+
+async function showMySubtasks(
+  issueKey: string,
+  stream: vscode.ChatResponseStream
+): Promise<void> {
   stream.progress(`Cargando tus subtareas en ${issueKey}…`);
 
   const client = new JiraClient();
-  let subtasks;
+  let subtasks: JiraSubtask[];
   try {
     subtasks = await client.getMySubtasks(issueKey);
   } catch (err: unknown) {
@@ -295,77 +180,57 @@ async function listSubtasks(issueKey: string, stream: vscode.ChatResponseStream)
   }
 
   const threshold    = getSubtaskAgeThresholdHours();
-  const criticalKeys = subtasks.filter((st) => isOverThreshold(st.createdRaw, threshold)).map((st) => st.key);
-
-  if (criticalKeys.length > 0) {
-    stream.markdown(
-      `> 🚨 **${criticalKeys.length} subtarea(s) crítica(s)** llevan más de **${threshold}h** abiertas: ` +
-      criticalKeys.join(", ") + `\n\n`
-    );
-  }
+  const displayed    = subtasks.slice(0, 10);
+  const extra        = subtasks.length - displayed.length;
 
   stream.markdown(
-    `## 🔗 Mis subtareas en ${issueKey} (${subtasks.length})\n\n` +
-    `| Clave | Resumen | Estado | Tiempo abierto |\n` +
+    `## Mis subtareas en ${issueKey} (${subtasks.length})\n\n` +
+    `| Clave | Resumen | Estado | Abierta hace |\n` +
     `|---|---|---|---|\n` +
-    subtasks.map((st) => {
-      const critical = isOverThreshold(st.createdRaw, threshold);
-      const timeCell = critical ? `🚨 **${st.timeOpen}**` : `📅 ${st.timeOpen}`;
-      return `| ${st.key} | ${truncateWords(st.summary, 10)} | ${st.status} | ${timeCell} |`;
+    displayed.map((st) => {
+      const over     = isOverThreshold(st.createdRaw, threshold);
+      const timeCell = over ? `🚨 **${st.timeOpen}**` : st.timeOpen;
+      return `| ${st.key} | ${truncateWords(st.summary, 8)} | ${st.status} | ${timeCell} |`;
     }).join("\n") +
     "\n"
   );
 
+  if (extra > 0) {
+    stream.markdown(`_…y ${extra} subtarea(s) más._\n`);
+  }
+
   log(`[JiraHandler] My subtasks listed for ${issueKey}: ${subtasks.length}`);
 }
 
-/**
- * Interactive flow to create a new subtask under a parent issue.
- * Steps: InputBox for summary → POST to Jira → show result.
- */
-async function createSubtaskInteractive(parentKey: string, stream: vscode.ChatResponseStream): Promise<void> {
-  stream.progress(`Preparando creación de subtarea en ${parentKey}…`);
+// ─── Action: Crear subtarea ───────────────────────────────────────────────────
 
-  const client = new JiraClient();
-
-  // Fetch parent to get project key
-  let parentIssue: JiraIssue;
-  try {
-    parentIssue = await client.getIssue(parentKey);
-  } catch (err: unknown) {
-    logError(`[JiraHandler] Failed to fetch parent issue ${parentKey}`, err);
-    const msg = err instanceof Error ? err.message : String(err);
-    stream.markdown(`❌ No pude cargar la issue padre **${parentKey}**: ${msg}`);
-    return;
-  }
-
-  // Derive project key from parent key (e.g. "BANK-42" → "BANK")
-  const projectKey = parentKey.split("-")[0];
-
-  stream.markdown(
-    `### ✏️ Crear subtarea en **${parentKey}**: ${parentIssue.summary}\n\n` +
-    `_Se abrirá un cuadro de texto para ingresar el resumen de la subtarea._\n\n`
-  );
-
+async function createSubtaskInteractive(
+  parentKey: string,
+  stream: vscode.ChatResponseStream,
+  jiraBase: string
+): Promise<void> {
   const summary = await vscode.window.showInputBox({
     title:       `Nueva subtarea en ${parentKey}`,
     prompt:      "Resumen de la subtarea",
     placeHolder: "Ej: Agregar validación de entrada al endpoint POST /users",
     validateInput: (value) => {
-      if (!value || !value.trim()) return "El resumen no puede estar vacío";
-      if (value.trim().length < 5) return "El resumen debe tener al menos 5 caracteres";
+      if (!value || !value.trim()) { return "El resumen no puede estar vacío"; }
+      if (value.trim().length < 5) { return "El resumen debe tener al menos 5 caracteres"; }
       return undefined;
     },
   });
 
   if (!summary || !summary.trim()) {
-    stream.markdown("Creación de subtarea cancelada.");
+    stream.markdown("_Creación de subtarea cancelada._");
     return;
   }
+
+  const projectKey = parentKey.split("-")[0];
 
   stream.progress(`Creando subtarea en ${parentKey}…`);
   log(`[JiraHandler] Creating subtask — parent: ${parentKey}, project: ${projectKey}, summary: "${summary.trim()}"`);
 
+  const client = new JiraClient();
   let newKey: string;
   try {
     newKey = await client.createSubtask(parentKey, projectKey, summary.trim());
@@ -376,459 +241,159 @@ async function createSubtaskInteractive(parentKey: string, stream: vscode.ChatRe
     return;
   }
 
-  const config   = vscode.workspace.getConfiguration("companyStandards");
-  const jiraUrl  = (config.get<string>("jiraUrl") ?? "").replace(/\/$/, "");
-  const issueUrl = `${jiraUrl}/browse/${newKey}`;
-
+  const issueUrl = `${jiraBase}/browse/${newKey}`;
   stream.markdown(
-    `## ✅ Subtarea creada exitosamente\n\n` +
-    `| Campo | Valor |\n|---|---|\n` +
-    `| **Clave** | ${newKey} |\n` +
-    `| **Resumen** | ${summary.trim()} |\n` +
-    `| **Issue padre** | ${parentKey} |\n` +
-    `| **Proyecto** | ${projectKey} |\n\n` +
-    `🔗 [Ver ${newKey} en Jira](${issueUrl})`
+    `✅ Subtarea creada: **[${newKey}](${issueUrl})** — ${summary.trim()}\n\n` +
+    `_Issue padre: ${parentKey}_`
   );
 
   log(`[JiraHandler] Subtask created: ${newKey} under ${parentKey}`);
 }
 
-/**
- * Interactive flow to update the documentation of a Jira issue.
- * Options: description, summary, add comment, or edit existing comment.
- */
-async function updateDocumentationInteractive(
+// ─── Action: Actualizar estado ────────────────────────────────────────────────
+
+async function updateStatusInteractive(
   issueKey: string,
-  stream: vscode.ChatResponseStream
+  stream: vscode.ChatResponseStream,
+  jiraBase: string,
+  _token: vscode.CancellationToken
 ): Promise<void> {
-  stream.progress(`Cargando issue ${issueKey}…`);
+  stream.progress(`Cargando tus subtareas en ${issueKey}…`);
 
   const client = new JiraClient();
-  let issue: JiraIssue;
+  let subtasks: JiraSubtask[];
   try {
-    issue = await client.getIssue(issueKey);
+    subtasks = await client.getMySubtasks(issueKey);
   } catch (err: unknown) {
-    logError(`[JiraHandler] Failed to fetch issue ${issueKey} for update`, err);
+    logError(`[JiraHandler] Failed to get subtasks for ${issueKey}`, err);
     const msg = err instanceof Error ? err.message : String(err);
-    stream.markdown(`❌ No pude cargar la issue **${issueKey}**: ${msg}`);
+    stream.markdown(`❌ No pude cargar las subtareas de **${issueKey}**: ${msg}`);
     return;
   }
 
-  stream.markdown(
-    `## ✏️ Actualizar documentación: **${issueKey}**\n\n` +
-    `> ${issue.summary}\n\n` +
-    `_Selecciona qué deseas actualizar en el cuadro de opciones._\n\n`
-  );
-
-  interface UpdateOption extends vscode.QuickPickItem {
-    action: string;
+  if (subtasks.length === 0) {
+    stream.markdown(`ℹ️ No tienes subtareas asignadas en **${issueKey}** para actualizar.`);
+    return;
   }
 
-  const options: UpdateOption[] = [
-    {
-      label:       "$(edit) Descripción",
-      description: "Actualizar el cuerpo de descripción de la issue",
-      action:      "description",
-    },
-    {
-      label:       "$(pencil) Resumen (título)",
-      description: "Cambiar el título principal de la issue",
-      action:      "summary",
-    },
-    {
-      label:       "$(comment) Agregar comentario",
-      description: "Añadir un nuevo comentario a la issue",
-      action:      "add-comment",
-    },
-    {
-      label:       "$(sync) Editar comentario existente",
-      description: "Seleccionar y modificar un comentario anterior",
-      action:      "edit-comment",
-    },
-  ];
+  // ── Select subtask ─────────────────────────────────────────────────────
+  interface SubtaskPickItem extends vscode.QuickPickItem {
+    subtaskKey: string;
+  }
 
-  const picked = await vscode.window.showQuickPick(options, {
-    title:       `¿Qué deseas actualizar en ${issueKey}?`,
-    placeHolder: "Selecciona una opción…",
+  const subtaskItems: SubtaskPickItem[] = subtasks.map((st) => ({
+    label:       `$(issue-opened) ${st.key}`,
+    description: st.status,
+    detail:      truncateWords(st.summary, 12),
+    subtaskKey:  st.key,
+  }));
+
+  const pickedSubtask = await vscode.window.showQuickPick(subtaskItems, {
+    title:         `Selecciona la subtarea a actualizar (${issueKey})`,
+    placeHolder:   "Escribe para filtrar…",
+    matchOnDetail: true,
   });
 
-  if (!picked) {
-    stream.markdown("Actualización cancelada.");
+  if (!pickedSubtask) {
+    stream.markdown("_Operación cancelada._");
     return;
   }
 
-  const config  = vscode.workspace.getConfiguration("companyStandards");
-  const jiraUrl = (config.get<string>("jiraUrl") ?? "").replace(/\/$/, "");
+  const subtaskKey = pickedSubtask.subtaskKey;
 
-  // ── Descripción ────────────────────────────────────────────────────────────
-  if (picked.action === "description") {
-    stream.markdown(
-      `### Descripción actual\n\n` +
-      (issue.description ? issue.description : "_Sin descripción._") +
-      `\n\n_Se abrirá un cuadro para editar la descripción._\n\n`
-    );
+  // ── Fetch transitions ──────────────────────────────────────────────────
+  stream.progress(`Cargando transiciones disponibles para ${subtaskKey}…`);
 
-    const newDesc = await vscode.window.showInputBox({
-      title:       `Actualizar descripción de ${issueKey}`,
-      prompt:      "Nueva descripción (texto plano; usa doble Enter para separar párrafos)",
-      value:       issue.description,
-      validateInput: (v) => (!v?.trim() ? "La descripción no puede estar vacía" : undefined),
-    });
-
-    if (!newDesc || !newDesc.trim()) {
-      stream.markdown("Actualización cancelada.");
-      return;
-    }
-
-    stream.progress(`Actualizando descripción de ${issueKey}…`);
-    try {
-      await client.updateIssue(issueKey, { description: newDesc.trim() });
-    } catch (err: unknown) {
-      logError(`[JiraHandler] Failed to update description of ${issueKey}`, err);
-      const msg = err instanceof Error ? err.message : String(err);
-      stream.markdown(`❌ Error al actualizar la descripción: **${msg}**`);
-      return;
-    }
-
-    stream.markdown(
-      `## ✅ Descripción actualizada\n\n` +
-      `**Issue:** ${issueKey}\n\n` +
-      `🔗 [Ver ${issueKey} en Jira](${jiraUrl}/browse/${issueKey})`
-    );
-    log(`[JiraHandler] Description updated for ${issueKey}`);
-  }
-
-  // ── Resumen (título) ───────────────────────────────────────────────────────
-  else if (picked.action === "summary") {
-    const newSummary = await vscode.window.showInputBox({
-      title:       `Actualizar resumen de ${issueKey}`,
-      prompt:      "Nuevo resumen (título de la issue)",
-      value:       issue.summary,
-      validateInput: (v) => (!v?.trim() ? "El resumen no puede estar vacío" : undefined),
-    });
-
-    if (!newSummary || !newSummary.trim()) {
-      stream.markdown("Actualización cancelada.");
-      return;
-    }
-
-    stream.progress(`Actualizando resumen de ${issueKey}…`);
-    try {
-      await client.updateIssue(issueKey, { summary: newSummary.trim() });
-    } catch (err: unknown) {
-      logError(`[JiraHandler] Failed to update summary of ${issueKey}`, err);
-      const msg = err instanceof Error ? err.message : String(err);
-      stream.markdown(`❌ Error al actualizar el resumen: **${msg}**`);
-      return;
-    }
-
-    stream.markdown(
-      `## ✅ Resumen actualizado\n\n` +
-      `| Campo | Valor |\n|---|---|\n` +
-      `| **Issue** | ${issueKey} |\n` +
-      `| **Nuevo resumen** | ${newSummary.trim()} |\n\n` +
-      `🔗 [Ver ${issueKey} en Jira](${jiraUrl}/browse/${issueKey})`
-    );
-    log(`[JiraHandler] Summary updated for ${issueKey}`);
-  }
-
-  // ── Agregar comentario ─────────────────────────────────────────────────────
-  else if (picked.action === "add-comment") {
-    const comment = await vscode.window.showInputBox({
-      title:       `Agregar comentario en ${issueKey}`,
-      prompt:      "Escribe tu comentario",
-      placeHolder: "Ej: Se implementó la validación usando el patrón AAA...",
-      validateInput: (v) => (!v?.trim() ? "El comentario no puede estar vacío" : undefined),
-    });
-
-    if (!comment || !comment.trim()) {
-      stream.markdown("Operación cancelada.");
-      return;
-    }
-
-    stream.progress(`Agregando comentario en ${issueKey}…`);
-    let commentId: string;
-    try {
-      commentId = await client.addComment(issueKey, comment.trim());
-    } catch (err: unknown) {
-      logError(`[JiraHandler] Failed to add comment to ${issueKey}`, err);
-      const msg = err instanceof Error ? err.message : String(err);
-      stream.markdown(`❌ Error al agregar el comentario: **${msg}**`);
-      return;
-    }
-
-    stream.markdown(
-      `## ✅ Comentario agregado\n\n` +
-      `| Campo | Valor |\n|---|---|\n` +
-      `| **Issue** | ${issueKey} |\n` +
-      `| **ID del comentario** | ${commentId} |\n\n` +
-      `🔗 [Ver ${issueKey} en Jira](${jiraUrl}/browse/${issueKey})`
-    );
-    log(`[JiraHandler] Comment added to ${issueKey}: id ${commentId}`);
-  }
-
-  // ── Editar comentario existente ────────────────────────────────────────────
-  else if (picked.action === "edit-comment") {
-    stream.progress(`Cargando comentarios de ${issueKey}…`);
-
-    let comments: JiraComment[];
-    try {
-      comments = await client.listComments(issueKey);
-    } catch (err: unknown) {
-      logError(`[JiraHandler] Failed to list comments for ${issueKey}`, err);
-      const msg = err instanceof Error ? err.message : String(err);
-      stream.markdown(`❌ No pude cargar los comentarios de **${issueKey}**: ${msg}`);
-      return;
-    }
-
-    if (comments.length === 0) {
-      stream.markdown(`ℹ️ La issue **${issueKey}** no tiene comentarios todavía.`);
-      return;
-    }
-
-    interface CommentPickItem extends vscode.QuickPickItem {
-      commentId: string;
-      currentBody: string;
-    }
-
-    const commentItems: CommentPickItem[] = comments.map((c) => ({
-      label:       `$(comment) ${c.author}`,
-      description: `hace ${c.timeAgo}`,
-      detail:      c.body.length > 120 ? c.body.slice(0, 120) + "…" : c.body,
-      commentId:   c.id,
-      currentBody: c.body,
-    }));
-
-    const pickedComment = await vscode.window.showQuickPick(commentItems, {
-      title:         `Selecciona el comentario a editar (${issueKey})`,
-      placeHolder:   "Escribe para filtrar…",
-      matchOnDetail: true,
-    });
-
-    if (!pickedComment) {
-      stream.markdown("Edición cancelada.");
-      return;
-    }
-
-    const updatedBody = await vscode.window.showInputBox({
-      title:       `Editar comentario en ${issueKey}`,
-      prompt:      "Nuevo contenido del comentario",
-      value:       pickedComment.currentBody,
-      validateInput: (v) => (!v?.trim() ? "El comentario no puede estar vacío" : undefined),
-    });
-
-    if (!updatedBody || !updatedBody.trim()) {
-      stream.markdown("Edición cancelada.");
-      return;
-    }
-
-    stream.progress(`Actualizando comentario en ${issueKey}…`);
-    try {
-      await client.updateComment(issueKey, pickedComment.commentId, updatedBody.trim());
-    } catch (err: unknown) {
-      logError(`[JiraHandler] Failed to update comment ${pickedComment.commentId} in ${issueKey}`, err);
-      const msg = err instanceof Error ? err.message : String(err);
-      stream.markdown(`❌ Error al actualizar el comentario: **${msg}**`);
-      return;
-    }
-
-    stream.markdown(
-      `## ✅ Comentario actualizado\n\n` +
-      `| Campo | Valor |\n|---|---|\n` +
-      `| **Issue** | ${issueKey} |\n` +
-      `| **Autor original** | ${pickedComment.label.replace("$(comment) ", "")} |\n\n` +
-      `🔗 [Ver ${issueKey} en Jira](${jiraUrl}/browse/${issueKey})`
-    );
-    log(`[JiraHandler] Comment ${pickedComment.commentId} updated in ${issueKey}`);
-  }
-}
-
-// ─── Semantic Search ──────────────────────────────────────────────────────────
-
-/** In-memory cache: cacheKey → ordered list of matched issues */
-const searchCache = new Map<string, JiraIssueSummary[]>();
-
-const PAGE_SIZE = JIRA_DEFAULTS.PAGE_SIZE;
-
-/**
- * Fetches all issues, asks the LLM to rank them by relevance to `query`,
- * then shows the first PAGE_SIZE results with pagination.
- */
-async function handleJiraSearch(
-  query: string,
-  stream: vscode.ChatResponseStream,
-  model: vscode.LanguageModelChat,
-  token: vscode.CancellationToken
-): Promise<void> {
-  stream.progress(`Buscando issues relacionadas con "${query}"…`);
-  log(`[JiraHandler] Search query: "${query}"`);
-
-  // 1 — Fetch all issues
-  const config    = vscode.workspace.getConfiguration("companyStandards");
-  const customJql = (config.get<string>("jiraJql") ?? "").trim();
-  const client    = new JiraClient();
-  let allIssues: JiraIssueSummary[];
-
+  let transitions: Array<{ id: string; name: string }>;
   try {
-    allIssues = customJql
-      ? await client.searchByJql(customJql, 100)
-      : await client.listIssues(getConfiguredProjects(), 100);
+    transitions = await client.getTransitions(subtaskKey);
   } catch (err: unknown) {
+    logError(`[JiraHandler] Failed to get transitions for ${subtaskKey}`, err);
     const msg = err instanceof Error ? err.message : String(err);
-    stream.markdown(`❌ Error consultando Jira: **${msg}**`);
+    stream.markdown(`❌ No pude obtener las transiciones de **${subtaskKey}**: ${msg}`);
     return;
   }
 
-  if (allIssues.length === 0) {
-    stream.markdown(`ℹ️ No hay issues para buscar.`);
+  if (transitions.length === 0) {
+    stream.markdown(`ℹ️ No hay transiciones disponibles para **${subtaskKey}**.`);
     return;
   }
 
-  // 2 — Ask LLM to rank by relevance
-  stream.progress(`Analizando ${allIssues.length} issues con IA…`);
-  const resolvedModel = await resolveModel(model, stream);
-  if (!resolvedModel) { return; }
+  // ── Select transition ──────────────────────────────────────────────────
+  interface TransitionPickItem extends vscode.QuickPickItem {
+    transitionId: string;
+    transitionName: string;
+  }
 
-  const issueList = allIssues.map((i) =>
-    `${i.key}: ${i.summary}${i.assignee ? ` [${firstNameOnly(i.assignee)}]` : ""}`
-  ).join("\n");
+  const transitionItems: TransitionPickItem[] = transitions.map((t) => ({
+    label:          `$(sync) ${t.name}`,
+    transitionId:   t.id,
+    transitionName: t.name,
+  }));
 
-  const rankMsg = vscode.LanguageModelChatMessage.User(
-    `Tienes esta lista de issues de Jira:\n\n${issueList}\n\n` +
-    `El usuario busca: "${query}"\n\n` +
-    `Responde ÚNICAMENTE con las claves de las issues más relevantes, ` +
-    `ordenadas de mayor a menor relevancia, separadas por comas. ` +
-    `Si ninguna es relevante responde "NONE". ` +
-    `Ejemplo de respuesta válida: BANK-42, BANK-15, BANK-7`
-  );
+  const pickedTransition = await vscode.window.showQuickPick(transitionItems, {
+    title:       `Nuevo estado para ${subtaskKey}`,
+    placeHolder: "Selecciona el estado…",
+  });
 
-  let rankResponse = "";
+  if (!pickedTransition) {
+    stream.markdown("_Operación cancelada._");
+    return;
+  }
+
+  // ── Apply transition ───────────────────────────────────────────────────
+  stream.progress(`Actualizando estado de ${subtaskKey} a "${pickedTransition.transitionName}"…`);
   try {
-    const res = await resolvedModel.sendRequest([rankMsg], {}, token);
-    for await (const chunk of res.text) { rankResponse += chunk; }
+    await client.transitionIssue(subtaskKey, pickedTransition.transitionId);
   } catch (err: unknown) {
-    logError("[JiraHandler] LLM ranking error", err);
-    // Fallback: show all issues unranked
-    rankResponse = allIssues.map((i) => i.key).join(", ");
-  }
-
-  log(`[JiraHandler] LLM ranking response: "${rankResponse}"`);
-
-  if (rankResponse.trim().toUpperCase() === "NONE") {
-    stream.markdown(`ℹ️ No encontré issues relacionadas con **"${query}"**.`);
+    logError(`[JiraHandler] Failed to transition ${subtaskKey}`, err);
+    const msg = err instanceof Error ? err.message : String(err);
+    stream.markdown(`❌ No pude actualizar el estado de **${subtaskKey}**: ${msg}`);
     return;
   }
 
-  // 3 — Build ordered result list
-  const rankedKeys  = rankResponse.split(",").map((k) => k.trim().toUpperCase()).filter(Boolean);
-  const keyIndex    = new Map(rankedKeys.map((k, i) => [k, i]));
-  const issueMap    = new Map(allIssues.map((i) => [i.key, i]));
-
-  const ranked = rankedKeys
-    .map((k) => issueMap.get(k))
-    .filter((i): i is JiraIssueSummary => i !== undefined);
-
-  // Include unranked issues at the end (LLM may not have returned all)
-  for (const issue of allIssues) {
-    if (!keyIndex.has(issue.key)) { ranked.push(issue); }
-  }
-
-  // 4 — Cache and show first page
-  const cacheKey = Buffer.from(query + Date.now()).toString("base64").slice(0, 12);
-  searchCache.set(cacheKey, ranked);
-
-  // Auto-cleanup after 10 min
-  setTimeout(() => searchCache.delete(cacheKey), 10 * 60 * 1000);
-
-  await renderSearchPage(ranked, 0, cacheKey, query, stream);
-}
-
-/**
- * Shows a paginated page of search results.
- * Called on "Ver más" → `@company /jira more <cacheKey> <page>`
- */
-async function showSearchPage(
-  cacheKey: string,
-  page: number,
-  stream: vscode.ChatResponseStream
-): Promise<void> {
-  const ranked = searchCache.get(cacheKey);
-  if (!ranked) {
-    stream.markdown(
-      `⚠️ La búsqueda expiró (10 min). Ejecuta la búsqueda de nuevo.`
-    );
-    return;
-  }
-  await renderSearchPage(ranked, page, cacheKey, "", stream);
-}
-
-function renderSearchPage(
-  ranked: JiraIssueSummary[],
-  page: number,
-  cacheKey: string,
-  query: string,
-  stream: vscode.ChatResponseStream
-): void {
-  const start    = page * PAGE_SIZE;
-  const pageItems = ranked.slice(start, start + PAGE_SIZE);
-  const total    = ranked.length;
-  const remaining = total - start - pageItems.length;
-
-  const heading = query
-    ? `🔍 Resultados para "${query}" — ${total} encontradas (página ${page + 1})`
-    : `🔍 Resultados — página ${page + 1}`;
-
-  const jiraBase = (vscode.workspace.getConfiguration("companyStandards").get<string>("jiraUrl") ?? "").replace(/\/$/, "");
-
-  stream.markdown(`## ${heading}\n\n`);
+  const subtaskUrl = `${jiraBase}/browse/${subtaskKey}`;
   stream.markdown(
-    `| Clave | Resumen | Asignado a |\n` +
-    `|---|---|---|\n`
+    `✅ Estado actualizado: **[${subtaskKey}](${subtaskUrl})** → **${pickedTransition.transitionName}**`
   );
-  for (const issue of pageItems) {
-    const assigneeLabel = issue.assignee ? firstNameOnly(issue.assignee) : "Sin asignar";
-    const keyLink       = jiraBase ? `[${issue.key}](${jiraBase}/browse/${issue.key})` : issue.key;
-    stream.markdown(
-      `| ${keyLink} | ${truncateWords(issue.summary, 10)} | ${assigneeLabel} |\n`
-    );
-  }
 
-  if (remaining > 0) {
-    const nextPage = page + 1;
-    stream.markdown(
-      `\n_Mostrando ${start + 1}–${start + pageItems.length} de **${total}** issues._\n\n` +
-      `> Para ver las siguientes ${Math.min(PAGE_SIZE, remaining)} escribe:\n` +
-      `> \`@company /jira more ${cacheKey} ${nextPage}\``
-    );
-    stream.button({
-      title:   `Ver más (${remaining} restantes)`,
-      command: "vscode.openIssueSearch",
-      // Note: button will show but user needs to type the command above manually
-      // since vscode.chat.sendChatRequest is not available in extensions
-    });
-  } else {
-    stream.markdown(`\n_Se mostraron todos los resultados (**${total}** issues)._`);
-  }
-
-  log(`[JiraHandler] Search page ${page + 1}: showed ${pageItems.length} of ${total}`);
+  log(`[JiraHandler] Transitioned ${subtaskKey} → "${pickedTransition.transitionName}" (id: ${pickedTransition.transitionId})`);
 }
 
-/** Resolve model (same as promptLibraryHandler) */
-async function resolveModel(
-  model: vscode.LanguageModelChat,
-  stream: vscode.ChatResponseStream
-): Promise<vscode.LanguageModelChat | null> {
-  if (model.id !== "auto") { return model; }
-  stream.progress("Seleccionando modelo de lenguaje…");
-  for (const selector of [
-    { vendor: "copilot", family: "gpt-4o" },
-    { vendor: "copilot", family: "gpt-4" },
-    { vendor: "copilot", family: "claude-sonnet" },
-    {},
-  ]) {
-    const models = await vscode.lm.selectChatModels(selector);
-    if (models.length > 0) { return models[0]; }
-  }
-  stream.markdown("❌ No hay modelos de lenguaje disponibles.");
-  return null;
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/** Compact issue table: key | summary | status — max 8 rows */
+function issueTable(issues: JiraIssueSummary[], jiraBase: string): string {
+  const rows = issues.map((i) => {
+    const keyCell = jiraBase ? `[${i.key}](${jiraBase}/browse/${i.key})` : i.key;
+    return `| ${keyCell} | ${truncateWords(i.summary, 10)} | ${i.status} |`;
+  });
+  return (
+    `## Issues en progreso (${issues.length})\n\n` +
+    `| Clave | Resumen | Estado |\n` +
+    `|---|---|---|\n` +
+    rows.join("\n") + "\n\n"
+  );
+}
+
+function truncateWords(text: string, max: number): string {
+  const words = text.trim().split(/\s+/);
+  if (words.length <= max) { return text; }
+  return words.slice(0, max).join(" ") + "…";
+}
+
+function getSubtaskAgeThresholdHours(): number {
+  const config = vscode.workspace.getConfiguration("companyStandards");
+  const hours  = config.get<number>("subtaskAgeThresholdHours");
+  if (hours !== undefined && hours !== null) { return hours; }
+  const days = config.get<number>("subtaskAgeThresholdDays");
+  if (days !== undefined && days !== null) { return days * 24; }
+  return 72;
+}
+
+function isOverThreshold(createdRaw: string | null | undefined, thresholdHours: number): boolean {
+  if (!createdRaw) { return false; }
+  const ms = Date.now() - new Date(createdRaw).getTime();
+  if (isNaN(ms) || ms < 0) { return false; }
+  return ms / 3_600_000 > thresholdHours;
 }

@@ -524,6 +524,46 @@ export class JiraClient {
     }
   }
 
+  /**
+   * Returns available transitions for a given issue.
+   */
+  async getTransitions(issueKey: string): Promise<Array<{ id: string; name: string }>> {
+    this.validateConfig();
+    const url = `${this.baseUrl}/rest/api/3/issue/${issueKey}/transitions`;
+    log(`[JiraClient] GET transitions → ${url}`);
+
+    try {
+      const res = await axios.get(url, { headers: this.headers() });
+      log(`[JiraClient] ← ${res.status} | ${res.data.transitions?.length ?? 0} transitions`);
+      return (res.data.transitions ?? []).map((t: Record<string, unknown>) => ({
+        id:   String(t["id"]),
+        name: String(t["name"]),
+      }));
+    } catch (err) {
+      throw this.wrapError(err, url);
+    }
+  }
+
+  /**
+   * Applies a transition to a Jira issue (e.g. moves it to "In Review").
+   */
+  async transitionIssue(issueKey: string, transitionId: string): Promise<void> {
+    this.validateConfig();
+    const url = `${this.baseUrl}/rest/api/3/issue/${issueKey}/transitions`;
+    log(`[JiraClient] POST transition → ${url} | transitionId: ${transitionId}`);
+
+    try {
+      await axios.post(
+        url,
+        { transition: { id: transitionId } },
+        { headers: { ...this.headers(), "Content-Type": "application/json" } }
+      );
+      log(`[JiraClient] ← 204 transitionIssue OK`);
+    } catch (err) {
+      throw this.wrapError(err, url);
+    }
+  }
+
   // ─── Config / error helpers ────────────────────────────────────────────────
 
   private validateConfig(): void {
