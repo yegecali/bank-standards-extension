@@ -14,6 +14,9 @@ import { handleExplainCommand } from "../handlers/explainHandler";
 import { handleDocumentCommand } from "../handlers/documentHandler";
 import { handleSecurityCommand } from "../handlers/securityHandler";
 import { handleCheckstyleCommand } from "../handlers/checkstyleHandler";
+import { handleReviewCommand } from "../handlers/reviewHandler";
+import { handleGenerateTestCommand } from "../handlers/generateTestHandler";
+import { handleCommitCommand } from "../handlers/commitHandler";
 import { isCreateIntent, createProjectFromNotion } from "./projectCreator";
 import { getStagedDiff } from "./gitHelper";
 import { BankPrompt } from "./BankPrompt";
@@ -169,12 +172,7 @@ Soy tu agente de estándares de desarrollo. Te ayudo a escribir código correcto
 
 | Comando | Qué hace |
 |---|---|
-| \`@company /jira\` | Ver issues en progreso (usa JQL configurado o filtro por defecto) |
-| \`@company /jira <texto>\` | Buscar issues por descripción usando IA (ej: \`/jira pagos con Redis\`) |
-| \`@company /jira PROJ-123\` | Ver detalle completo de una issue |
-| \`@company /jira subtasks PROJ-123\` | Ver tus subtareas asignadas (con alarma de edad) |
-| \`@company /jira create PROJ-123\` | Crear una subtarea en una issue |
-| \`@company /jira update PROJ-123\` | Actualizar descripción o agregar comentario |
+| \`@company /jira\` | Flujo guiado: muestra issues en progreso → elige una → ver subtareas / crear subtarea / actualizar estado |
 
 ---
 
@@ -206,8 +204,9 @@ Soy tu agente de estándares de desarrollo. Te ayudo a escribir código correcto
 ## 💡 Tips
 
 - Escribe \`@company\` + espacio para ver sugerencias de comandos
-- Los comandos \`/review\`, \`/generate-test\` y \`/docs\` usan el archivo que tienes **abierto y activo** en el editor
-- \`/jira <texto libre>\` hace búsqueda semántica con IA sobre todas tus issues
+- Los comandos \`/review\`, \`/generate-test\`, \`/docs\` y \`/commit\` usan el archivo que tienes **abierto y activo** en el editor
+- \`/jira\` usa QuickPick — no necesitas escribir argumentos, todo es guiado
+- Las operaciones pesadas (\`/explain\`, \`/document\`, \`/security\`, \`/checkstyle\`) procesan el proyecto completo en lotes
 - Si eres nuevo, empieza con \`@company /onboarding\`
 `.trim();
 
@@ -259,6 +258,26 @@ function makeHandler(context: vscode.ExtensionContext): vscode.ChatRequestHandle
     if (request.command === "checkstyle") {
       await handleCheckstyleCommand(stream, request.model, token);
       return { metadata: { intent: "checkstyle" } };
+    }
+
+    // 0a0e — Handle /review command
+    if (request.command === "review") {
+      const activeSpecialty = getActiveSpecialty();
+      await handleReviewCommand(stream, request.model, activeSpecialty, token);
+      return { metadata: { intent: "review", specialty: activeSpecialty } };
+    }
+
+    // 0a0f — Handle /generate-test command
+    if (request.command === "generate-test") {
+      const activeSpecialty = getActiveSpecialty();
+      await handleGenerateTestCommand(stream, request.model, activeSpecialty, token);
+      return { metadata: { intent: "testing", specialty: activeSpecialty } };
+    }
+
+    // 0a0g — Handle /commit command
+    if (request.command === "commit") {
+      await handleCommitCommand(stream, request.model, token);
+      return { metadata: { intent: "commit" } };
     }
 
     // 0a1 — Handle /search command

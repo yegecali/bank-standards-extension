@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { log, logError } from "../logger";
 import { BATCH, EXCLUDE_GLOB, SRC_EXTENSIONS } from "../config/defaults";
+import { resolveModel } from "../utils/modelResolver";
 
 const OUTPUT_PATH = "docs/sequence-diagrams.md";
 
@@ -421,21 +422,3 @@ function shortName(relPath: string): string {
   return relPath.split("/").pop()?.replace(/\.[^.]+$/, "") ?? relPath;
 }
 
-async function resolveModel(
-  model: vscode.LanguageModelChat,
-  stream: vscode.ChatResponseStream
-): Promise<vscode.LanguageModelChat | null> {
-  if (model.id !== "auto") { return model; }
-  stream.progress("Seleccionando modelo de lenguaje…");
-  for (const selector of [
-    { vendor: "copilot", family: "gpt-4o" },
-    { vendor: "copilot", family: "gpt-4" },
-    { vendor: "copilot", family: "claude-sonnet" },
-    {},
-  ]) {
-    const models = await vscode.lm.selectChatModels(selector);
-    if (models.length > 0) { return models[0]; }
-  }
-  stream.markdown("❌ No hay modelos de lenguaje disponibles. Activa GitHub Copilot.");
-  return null;
-}

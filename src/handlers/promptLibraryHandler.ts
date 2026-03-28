@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { PromptTemplate } from "../notion/parser";
 import { log, logError } from "../logger";
+import { resolveModel } from "../utils/modelResolver";
 
 /**
  * Handles the /prompts slash command.
@@ -74,51 +75,6 @@ function showPromptCatalog(
   );
 }
 
-// ─── Model resolver ───────────────────────────────────────────────────────────
-
-/**
- * The "auto" model is Copilot's routing placeholder and does NOT support
- * sendRequest() from extensions. When it's detected, we fall back to the
- * first available GPT-4o / GPT-4 / any model via selectChatModels().
- */
-async function resolveModel(
-  model: vscode.LanguageModelChat,
-  stream: vscode.ChatResponseStream
-): Promise<vscode.LanguageModelChat | null> {
-  log(`[PromptsHandler] resolveModel — incoming model: id="${model.id}" family="${model.family}" vendor="${model.vendor}"`);
-
-  if (model.id !== "auto") {
-    log(`[PromptsHandler] Using model as-is: "${model.id}"`);
-    return model;
-  }
-
-  log(`[PromptsHandler] Model is "auto" — selecting concrete model via vscode.lm.selectChatModels()`);
-  stream.progress("Seleccionando modelo de lenguaje…");
-
-  // Try preferred models in order
-  const candidates = [
-    { vendor: "copilot", family: "gpt-4o" },
-    { vendor: "copilot", family: "gpt-4" },
-    { vendor: "copilot", family: "claude-sonnet" },
-    {},  // any model
-  ];
-
-  for (const selector of candidates) {
-    const models = await vscode.lm.selectChatModels(selector);
-    log(`[PromptsHandler] selectChatModels(${JSON.stringify(selector)}) → ${models.length} models: [${models.map((m) => m.id).join(", ")}]`);
-    if (models.length > 0) {
-      log(`[PromptsHandler] Resolved model: "${models[0].id}" (${models[0].family})`);
-      return models[0];
-    }
-  }
-
-  logError("[PromptsHandler] No models available — cannot execute prompt");
-  stream.markdown(
-    "❌ No hay modelos de lenguaje disponibles.\n\n" +
-    "Asegúrate de tener GitHub Copilot activo y haber iniciado sesión."
-  );
-  return null;
-}
 
 // ─── Apply a prompt ───────────────────────────────────────────────────────────
 

@@ -24,7 +24,14 @@
       "Bash(sed -i '' 's/\\\\bCONTROLLER_BATCH\\\\b/BATCH.CONTROLLERS_PER_BATCH/g' /Users/yegecali/Projects/vscode-custom-extension/src/handlers/explainHandler.ts)",
       "Bash(__NEW_LINE_ab3af9a8ae6c2ffb__ sed:*)",
       "Bash(sed -i '' 's/chunk\\(files, FILES_PER_BATCH\\)/chunk\\(files, BATCH.FILES_PER_BATCH\\)/g; s/\\(${FILES_PER_BATCH}/\\(${BATCH.FILES_PER_BATCH}/g; s/slice\\(0, MAX_CHARS_FILE\\)/slice\\(0, BATCH.MAX_CHARS_FILE\\)/g' /Users/yegecali/Projects/vscode-custom-extension/src/handlers/documentHandler.ts)",
-      "Bash(__NEW_LINE_f350fb291450780b__ sed:*)"
+      "Bash(__NEW_LINE_f350fb291450780b__ sed:*)",
+      "Read(//Users/yegecali/**)",
+      "Bash(npm --version)",
+      "Bash(tsc --version)",
+      "Bash(for f:*)",
+      "Bash(do echo:*)",
+      "Read(//Users/yegecali/Projects/vscode-custom-extension/**)",
+      "Bash(done)"
     ]
   }
 }

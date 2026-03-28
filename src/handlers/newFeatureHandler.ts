@@ -78,7 +78,7 @@ export async function handleNewFeatureCommand(
   const client = new JiraClient();
   let issues;
   try {
-    issues = await client.listIssues(projectKey);
+    issues = await client.listIssues([projectKey]);
   } catch (err: unknown) {
     logError("[NewFeature] Failed to list Jira issues", err);
     const msg = err instanceof Error ? err.message : String(err);

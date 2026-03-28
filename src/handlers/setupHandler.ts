@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { PromptTemplate } from "../notion/parser";
 import { log, logError } from "../logger";
+import { resolveModel } from "../utils/modelResolver";
 
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
@@ -192,26 +193,6 @@ async function tryReadFile(root: vscode.Uri, candidates: string[]): Promise<stri
   return null;
 }
 
-// ─── Model resolver ───────────────────────────────────────────────────────────
-
-async function resolveModel(
-  model: vscode.LanguageModelChat,
-  stream: vscode.ChatResponseStream
-): Promise<vscode.LanguageModelChat | null> {
-  if (model.id !== "auto") { return model; }
-  stream.progress("Seleccionando modelo de lenguaje…");
-  for (const selector of [
-    { vendor: "copilot", family: "gpt-4o" },
-    { vendor: "copilot", family: "gpt-4" },
-    { vendor: "copilot", family: "claude-sonnet" },
-    {},
-  ]) {
-    const models = await vscode.lm.selectChatModels(selector);
-    if (models.length > 0) { return models[0]; }
-  }
-  stream.markdown("❌ No hay modelos de lenguaje disponibles. Activa GitHub Copilot.");
-  return null;
-}
 
 // ─── Fuzzy match ──────────────────────────────────────────────────────────────
 

@@ -4,6 +4,7 @@ import { exec }     from "child_process";
 import { promisify } from "util";
 import { log, logError } from "../logger";
 import { EXCLUDE_GLOB } from "../config/defaults";
+import { resolveModel } from "../utils/modelResolver";
 
 const execAsync = promisify(exec);
 
@@ -592,21 +593,3 @@ async function callModel(
   return result;
 }
 
-async function resolveModel(
-  model: vscode.LanguageModelChat,
-  stream: vscode.ChatResponseStream
-): Promise<vscode.LanguageModelChat | null> {
-  if (model.id !== "auto") { return model; }
-  stream.progress("Seleccionando modelo de lenguaje…");
-  for (const selector of [
-    { vendor: "copilot", family: "gpt-4o" },
-    { vendor: "copilot", family: "gpt-4" },
-    { vendor: "copilot", family: "claude-sonnet" },
-    {},
-  ]) {
-    const models = await vscode.lm.selectChatModels(selector);
-    if (models.length > 0) { return models[0]; }
-  }
-  stream.markdown("❌ No hay modelos de lenguaje disponibles. Activa GitHub Copilot.");
-  return null;
-}

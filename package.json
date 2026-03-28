@@ -2,7 +2,7 @@
   "name": "company-coding-standard",
   "displayName": "Company Coding Standard",
   "description": "Define and enforce your company's development standards directly in VSCode — powered by your own knowledge base (Notion or Confluence). Naming conventions, test standards, project scaffolding, prompt library, Jira integration, and AI agent.",
-  "version": "0.0.44",
+  "version": "0.0.45",
   "publisher": "yemicanchari",
   "preview": true,
   "license": "MIT",
@@ -53,7 +53,7 @@
           },
           {
             "name": "review",
-            "description": "Revisa el archivo activo en el editor contra los estándares del banco"
+            "description": "Revisa el archivo activo contra los estándares de la compañía: nomenclatura, estructura, calidad y tests. Requiere el archivo abierto en el editor."
           },
           {
             "name": "create",
@@ -69,7 +69,7 @@
           },
           {
             "name": "generate-test",
-            "description": "Genera tests unitarios para el archivo activo siguiendo los estándares de testing del banco"
+            "description": "Genera tests unitarios Triple-AAA para el archivo activo. Detecta el lenguaje (Java→JUnit5, TS→Jest, Python→pytest), carga los estándares de testing y escribe el archivo de test automáticamente."
           },
           {
             "name": "docs",
@@ -77,7 +77,7 @@
           },
           {
             "name": "commit",
-            "description": "Sugiere un mensaje de commit basado en los cambios staged y las convenciones del banco"
+            "description": "Sugiere un mensaje de commit en formato Conventional Commits basado en el git diff staged. Detecta automáticamente el issue de Jira desde el nombre del branch."
           },
           {
             "name": "new-feature",

@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { log, logError } from "../logger";
 import { BATCH, EXCLUDE_GLOB_NO_TESTS, SRC_EXTENSIONS_FULL, DEFAULT_SECURITY_RISKS } from "../config/defaults";
+import { resolveModel } from "../utils/modelResolver";
 
 const OUTPUT_PATH = "docs/security-report.md";
 
@@ -501,21 +502,3 @@ async function callModel(
   return result;
 }
 
-async function resolveModel(
-  model: vscode.LanguageModelChat,
-  stream: vscode.ChatResponseStream
-): Promise<vscode.LanguageModelChat | null> {
-  if (model.id !== "auto") { return model; }
-  stream.progress("Seleccionando modelo de lenguaje…");
-  for (const selector of [
-    { vendor: "copilot", family: "gpt-4o" },
-    { vendor: "copilot", family: "gpt-4" },
-    { vendor: "copilot", family: "claude-sonnet" },
-    {},
-  ]) {
-    const models = await vscode.lm.selectChatModels(selector);
-    if (models.length > 0) { return models[0]; }
-  }
-  stream.markdown("❌ No hay modelos de lenguaje disponibles. Activa GitHub Copilot.");
-  return null;
-}
