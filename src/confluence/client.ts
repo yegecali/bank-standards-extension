@@ -1,6 +1,6 @@
 import axios, { AxiosError } from "axios";
 import * as vscode from "vscode";
-import { log, logError } from "../logger";
+import { log, logError, notifyError } from "../logger";
 
 export interface ConfluencePageMeta {
   id: string;
@@ -254,14 +254,23 @@ export class ConfluenceClient {
     );
 
     if (status === 401) {
-      return new Error("Confluence: Unauthorized. Check confluenceEmail and confluenceToken.");
+      const msg = "Confluence: Token no autorizado o caducado. Actualiza confluenceEmail y confluenceToken en la configuración.";
+      notifyError(msg, "companyStandards.confluenceToken");
+      return new Error(msg);
     }
     if (status === 403) {
-      return new Error("Confluence: Forbidden. Make sure the API token has access to this page.");
+      const msg = "Confluence: Sin acceso a esta página. Verifica que el token tenga permisos sobre el espacio configurado.";
+      notifyError(msg, "companyStandards.confluenceToken");
+      return new Error(msg);
     }
     if (status === 404) {
-      return new Error(`Confluence: Page not found (id: ${url.split("/").pop()?.split("?")[0]}). Check pagesMap.`);
+      return new Error(`Confluence: Página no encontrada (id: ${url.split("/").pop()?.split("?")[0]}). Verifica pagesMap o specialtiesMap.`);
     }
-    return new Error(`Confluence: ${err.message}`);
+    if (!status) {
+      const msg = "Confluence: Error de red — no se pudo conectar con el servidor. Verifica confluenceUrl y tu conexión.";
+      notifyError(msg, "companyStandards.confluenceUrl");
+      return new Error(msg);
+    }
+    return new Error(`Confluence: Error inesperado (${status}) — ${err.message}`);
   }
 }

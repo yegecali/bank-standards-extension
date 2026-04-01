@@ -1,6 +1,6 @@
 import axios, { AxiosError } from "axios";
 import * as vscode from "vscode";
-import { log, logError } from "../logger";
+import { log, logError, notifyError } from "../logger";
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
 
@@ -594,9 +594,24 @@ export class JiraClient {
       `body: ${body}`
     );
 
-    if (status === 401) return new Error("Jira: Unauthorized. Check jiraEmail and jiraToken.");
-    if (status === 403) return new Error("Jira: Forbidden. Make sure the API token has access to this project.");
-    if (status === 404) return new Error("Jira: Issue or project not found. Check jiraProject and the issue key.");
-    return new Error(`Jira: ${err.message}`);
+    if (status === 401) {
+      const msg = "Jira: Token no autorizado o caducado. Actualiza jiraEmail y jiraToken en la configuración.";
+      notifyError(msg, "companyStandards.jiraToken");
+      return new Error(msg);
+    }
+    if (status === 403) {
+      const msg = "Jira: Sin acceso al proyecto. Verifica que el token tenga permisos sobre los proyectos configurados.";
+      notifyError(msg, "companyStandards.jiraToken");
+      return new Error(msg);
+    }
+    if (status === 404) {
+      return new Error("Jira: Issue o proyecto no encontrado. Verifica companyStandards.jiraProject y el ID del issue.");
+    }
+    if (!status) {
+      const msg = "Jira: Error de red — no se pudo conectar con el servidor. Verifica jiraUrl y tu conexión.";
+      notifyError(msg, "companyStandards.jiraUrl");
+      return new Error(msg);
+    }
+    return new Error(`Jira: Error inesperado (${status}) — ${err.message}`);
   }
 }
