@@ -46,10 +46,11 @@ export async function handleExplainCommand(
   // ── Discovery ──────────────────────────────────────────────────────────────
   stream.progress("Buscando controladores y contratos OpenAPI…");
 
-  const [controllers, services, repositories, openapiText] = await Promise.all([
+  const [controllers, services, repositories, infrastructure, openapiText] = await Promise.all([
     findControllers(),
     findServices(),
     findRepositories(),
+    findInfrastructure(),
     findOpenApiContent(),
   ]);
 
@@ -69,12 +70,13 @@ export async function handleExplainCommand(
     `| Controladores | **${controllers.length}** |\n` +
     `| Servicios | **${services.length}** |\n` +
     `| Repos/Gateways/Clientes | **${repositories.length}** |\n` +
+    `| Infraestructura (Redis/Eventos/Async) | **${infrastructure.length}** |\n` +
     `| Lotes | **${batches.length}** (${BATCH.CONTROLLERS_PER_BATCH} controladores c/u) |\n` +
     `| OpenAPI | ${openapiText ? "✅ encontrado" : "⚠️ no encontrado"} |\n\n` +
     `Se procesará en **2 iteraciones** para maximizar la calidad del diagrama.\n\n`
   );
 
-  log(`[ExplainHandler] ${controllers.length} controllers, ${services.length} services, ${repositories.length} repos/gateways, ${batches.length} batches`);
+  log(`[ExplainHandler] ${controllers.length} controllers, ${services.length} services, ${repositories.length} repos/gateways, ${infrastructure.length} infra, ${batches.length} batches`);
 
   // ── Iteration 1: generate raw diagrams ─────────────────────────────────────
   stream.markdown(`### Iteración 1 — Generando diagramas por lote…\n\n`);
@@ -107,10 +109,12 @@ export async function handleExplainCommand(
     const relevantServices = findRelevantServices(batch, services);
     // Find repositories/gateways/clients referenced by those services
     const relevantRepositories = findRelevantRepositories(relevantServices, repositories);
-    const refined = await refineDiagrams(batch, relevantServices, relevantRepositories, result.rawDiagrams, resolvedModel, token);
+    // Find infrastructure (Redis, events, async, REST clients) referenced anywhere in the chain
+    const relevantInfrastructure = findRelevantInfrastructure(relevantServices, relevantRepositories, infrastructure);
+    const refined = await refineDiagrams(batch, relevantServices, relevantRepositories, relevantInfrastructure, result.rawDiagrams, resolvedModel, token);
     result.refinedDiagrams = refined;
 
-    stream.markdown(`- ✅ Lote ${i + 1} refinado (${relevantServices.length} servicio(s), ${relevantRepositories.length} repo(s)/gateway(s))\n`);
+    stream.markdown(`- ✅ Lote ${i + 1} refinado (${relevantServices.length} svc, ${relevantRepositories.length} repo, ${relevantInfrastructure.length} infra)\n`);
     log(`[ExplainHandler] Batch ${i + 1} iteration 2 done (${refined.length} chars)`);
   }
 
@@ -173,7 +177,11 @@ async function generateRawDiagrams(
 
     `**PARTE B — Diagrama de secuencia boceto (capa por capa):**\n` +
     `Genera un diagrama Mermaid que muestre las capas en orden estricto:\n` +
-    `  Client → Controller → Service → Repository/Gateway → DB/ExternalAPI\n` +
+    `  Client → Controller → Service → Repository/Gateway → DB\n` +
+    `  Si el código usa Redis (@Cacheable, RedisTemplate): añade participant Redis\n` +
+    `  Si el código publica eventos (KafkaTemplate, ApplicationEventPublisher): añade participant Kafka/EventBus\n` +
+    `  Si el código llama a APIs externas (Feign, RestTemplate, WebClient): añade participant ExternalAPI\n` +
+    `  Si hay métodos @Async o CompletableFuture: usa ->-) y nota "async"\n` +
     `Usa los nombres reales de clases y métodos que veas en el código.\n` +
     `En este boceto incluye el flujo principal (happy path) y un alt para el error más obvio.\n\n` +
 
@@ -216,6 +224,7 @@ async function refineDiagrams(
   batch: ControllerFile[],
   relevantServices: ServiceFile[],
   relevantRepositories: ServiceFile[],
+  relevantInfrastructure: ServiceFile[],
   previousDiagrams: string,
   model: vscode.LanguageModelChat,
   token: vscode.CancellationToken
@@ -236,6 +245,12 @@ async function refineDiagrams(
         .join("\n\n")
     : "_No se encontraron implementaciones de repositorios/gateways._";
 
+  const infrastructureSection = relevantInfrastructure.length > 0
+    ? relevantInfrastructure
+        .map((i) => `### ${i.name}\n\`\`\`\n${i.content}\n\`\`\``)
+        .join("\n\n")
+    : "_No se encontraron archivos de infraestructura dedicados. Detecta Redis/eventos/async por anotaciones en el código._";
+
   const msg = vscode.LanguageModelChatMessage.User(
     `Eres un arquitecto de software senior. Tienes el boceto de diagramas de secuencia de la iteración 1\n` +
     `y ahora también las implementaciones reales de servicios, repositorios, gateways y clientes.\n\n` +
@@ -244,18 +259,26 @@ async function refineDiagrams(
 
     `1. **Contrasta el boceto con el código real** — identifica qué falta, qué está mal nombrado o qué capas no aparecen.\n` +
     `2. **Expande capa por capa** en orden estricto:\n` +
-    `   Client → Controller → (Interceptor/Filter si existe) → Service → (otra Service si hay orquestación)\n` +
-    `   → Repository/Gateway/Client → DB / API externa / Cola (Kafka, SQS, RabbitMQ)\n` +
+    `   Client → Controller → (Filter/Interceptor si existe) → Service → (orquestación entre Services)\n` +
+    `   → Repository/Gateway/DAO → DB\n` +
+    `   → REST Client externo (Feign/@FeignClient, RestTemplate, WebClient, axios, fetch) → API Externa\n` +
+    `   → Event Producer → Cola/Bus (Kafka, RabbitMQ, SQS, Spring Events)\n` +
+    `   → Cache (RedisTemplate, @Cacheable, StringRedisTemplate, Jedis, Lettuce)\n` +
     `3. **Incluye interacciones con beans y configuración**:\n` +
-    `   - Beans de Spring/CDI/Quarkus inyectados (nombre exacto de clase)\n` +
-    `   - Mappers, Converters, Validators que se invocan\n` +
-    `   - Cache (Redis, EhCache, Caffeine): muestra el check cache → miss/hit como alt\n` +
-    `   - Transacciones (@Transactional): marca con note el inicio/commit/rollback\n` +
-    `4. **Muestra todos los flujos condicionales relevantes**:\n` +
-    `   - Validaciones de negocio (alt éxito / else error de validación)\n` +
+    `   - Beans inyectados: nombre exacto de clase (Mapper, Validator, Converter, Builder)\n` +
+    `   - Cache: alt { hit → retornar del cache } else { miss → consultar DB → guardar en cache }\n` +
+    `   - Transacciones (@Transactional, @Transactional(readOnly)): Note over Service: @Transactional\n` +
+    `   - Configuración relevante (@Value, @ConfigurationProperties) si afecta el flujo\n` +
+    `4. **Llamadas asíncronas y eventos** — usa flechas especiales:\n` +
+    `   - Llamada async (@Async, CompletableFuture, Mono/Flux): usa \`-->>\` con Note "async"\n` +
+    `   - Fire-and-forget (publish evento, send Kafka sin esperar respuesta): usa \`->)\` \n` +
+    `   - Consumidor de evento (@KafkaListener, @RabbitListener, @EventListener): nuevo participante\n` +
+    `   - Si hay reactive (Mono/Flux): muestra el subscribe y el onNext/onError\n` +
+    `5. **Flujos condicionales y excepciones**:\n` +
+    `   - alt éxito / else error para validaciones y casos de negocio\n` +
     `   - Manejo de excepciones: qué lanza el servicio, cómo lo captura el controller\n` +
-    `   - Flujos opcionales (opt) como notificaciones, eventos, auditoría\n` +
-    `5. **Usa los nombres exactos** de clases y métodos del código (no nombres genéricos).\n\n` +
+    `   - opt para flujos opcionales (auditoría, notificaciones, eventos secundarios)\n` +
+    `6. **Usa los nombres exactos** de clases y métodos del código (no nombres genéricos).\n\n` +
 
     `MISMO FORMATO DE SALIDA OBLIGATORIO:\n\n` +
     `## CONTROLLER: NombreExactoDelControlador\n\n` +
@@ -274,18 +297,22 @@ async function refineDiagrams(
     `  ...\n` +
     "```\n\n" +
 
-    `REGLAS MERMAID OBLIGATORIAS (igual que iteración 1):\n` +
-    `- Usa \`->>\` para llamadas síncronas (NO ->>>)\n` +
-    `- Usa \`-->>\` para respuestas (NO -->>>)\n` +
-    `- Usa \`alt\`/\`else\`/\`end\` para condicionales, \`opt\` para flujos opcionales\n` +
-    `- Usa \`Note over X,Y: texto\` para marcar transacciones, eventos o anotaciones importantes\n` +
-    `- Los alias de participant deben coincidir exactamente con los usados en las flechas\n` +
+    `REGLAS MERMAID OBLIGATORIAS:\n` +
+    `- \`->>\`  llamada síncrona (NO ->>>)\n` +
+    `- \`-->>\` respuesta síncrona (NO -->>>)\n` +
+    `- \`->)\`  mensaje async fire-and-forget (publicar evento, enviar a Kafka sin esperar)\n` +
+    `- \`alt\`/\`else\`/\`end\`  condicionales\n` +
+    `- \`opt\`  flujos opcionales\n` +
+    `- \`Note over X,Y: texto\`  para @Transactional, async, retry, etc.\n` +
+    `- Los alias de participant deben coincidir EXACTAMENTE con los usados en las flechas\n` +
+    `- Agrega participantes para cada capa descubierta: Redis, Kafka, ExternalAPI, EventBus, etc.\n` +
     `- No inventes clases ni métodos que no estén en el código\n\n` +
 
     `--- BOCETOS ITERACIÓN 1 ---\n${previousDiagrams}\n\n` +
     `--- CONTROLADORES ---\n${controllerSection}\n\n` +
     `--- SERVICIOS ---\n${serviceSection}\n\n` +
-    `--- REPOSITORIOS / GATEWAYS / CLIENTES ---\n${repositorySection}`
+    `--- REPOSITORIOS / GATEWAYS / CLIENTES REST ---\n${repositorySection}\n\n` +
+    `--- INFRAESTRUCTURA (Redis, Eventos, Async, Producers, Consumers, Listeners) ---\n${infrastructureSection}`
   );
 
   return await callModel(model, msg, token);
@@ -392,6 +419,51 @@ async function findServices(): Promise<ServiceFile[]> {
   return result;
 }
 
+async function findInfrastructure(): Promise<ServiceFile[]> {
+  const patterns = [
+    // REST clients (Feign, RestTemplate wrappers, WebClient wrappers)
+    "**/*RestClient.*",
+    "**/*FeignClient.*",
+    "**/*WebClient.*",
+    "**/*HttpClient.*",
+    "**/*ApiClient.*",
+    // Event producers / consumers / listeners
+    "**/*Producer.*",
+    "**/*Consumer.*",
+    "**/*Listener.*",
+    "**/*Publisher.*",
+    "**/*EventHandler.*",
+    "**/*EventBus.*",
+    "**/*MessageSender.*",
+    "**/*MessageHandler.*",
+    // Redis / Cache
+    "**/*Redis*.*",
+    "**/*CacheManager.*",
+    "**/*CacheService.*",
+    "**/*CacheHelper.*",
+    // Async services
+    "**/*AsyncService.*",
+    "**/*AsyncHandler.*",
+    "**/*AsyncTask.*",
+  ];
+
+  const uris = await findFilesByPatterns(patterns);
+  const result: ServiceFile[] = [];
+
+  for (const uri of uris) {
+    if (!SRC_EXTENSIONS.includes(extOf(uri))) { continue; }
+    try {
+      const bytes   = await vscode.workspace.fs.readFile(uri);
+      const content = Buffer.from(bytes).toString("utf-8").slice(0, BATCH.MAX_CHARS_SERVICE);
+      const name    = baseName(uri).replace(/\.[^.]+$/, "").toLowerCase();
+      result.push({ uri, relPath: vscode.workspace.asRelativePath(uri), name, content });
+    } catch { /* skip */ }
+  }
+
+  log(`[ExplainHandler] Found ${result.length} infrastructure files (clients/events/redis/async)`);
+  return result;
+}
+
 async function findRepositories(): Promise<ServiceFile[]> {
   const patterns = [
     "**/*Repository.*",
@@ -471,6 +543,15 @@ function findRelevantServices(batch: ControllerFile[], services: ServiceFile[]):
 function findRelevantRepositories(services: ServiceFile[], repositories: ServiceFile[]): ServiceFile[] {
   const combined = services.map((s) => s.content).join("\n").toLowerCase();
   return repositories.filter((r) => combined.includes(r.name));
+}
+
+function findRelevantInfrastructure(
+  services: ServiceFile[],
+  repositories: ServiceFile[],
+  infrastructure: ServiceFile[]
+): ServiceFile[] {
+  const combined = [...services, ...repositories].map((f) => f.content).join("\n").toLowerCase();
+  return infrastructure.filter((i) => combined.includes(i.name));
 }
 
 // ─── LLM call helper ─────────────────────────────────────────────────────────
