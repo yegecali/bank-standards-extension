@@ -8,9 +8,11 @@ const OUTPUT_PATH = "docs/sequence-diagrams.md";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface ControllerFile {
-  uri:     vscode.Uri;
-  relPath: string;
-  content: string;
+  uri:       vscode.Uri;
+  relPath:   string;
+  content:   string;
+  lineCount: number;
+  charCount: number;
 }
 
 interface ServiceFile {
@@ -64,19 +66,36 @@ export async function handleExplainCommand(
 
   const batches = chunk(controllers, BATCH.CONTROLLERS_PER_BATCH);
 
+  const totalLines = controllers.reduce((s, c) => s + c.lineCount, 0);
+  const totalChars = controllers.reduce((s, c) => s + c.charCount, 0);
+
+  // ── Summary table ──────────────────────────────────────────────────────────
+  const batchTableRows = batches.map((batch, i) => {
+    const names     = batch.map((c) => shortName(c.relPath)).join(", ");
+    const lines     = batch.reduce((s, c) => s + c.lineCount, 0);
+    const kb        = Math.round(batch.reduce((s, c) => s + c.charCount, 0) / 1024 * 10) / 10;
+    return `| ${i + 1} | ${names} | ${batch.length} | ${lines.toLocaleString()} | ${kb} KB |`;
+  }).join("\n");
+
   stream.markdown(
     `## 🔍 Generando diagramas de secuencia\n\n` +
     `| | |\n|---|---|\n` +
-    `| Controladores | **${controllers.length}** |\n` +
+    `| Controladores escaneados | **${controllers.length}** |\n` +
+    `| Total líneas de código | **${totalLines.toLocaleString()}** |\n` +
+    `| Total contexto | **${Math.round(totalChars / 1024)} KB** |\n` +
     `| Servicios | **${services.length}** |\n` +
     `| Repos/Gateways/Clientes | **${repositories.length}** |\n` +
     `| Infraestructura (Redis/Eventos/Async) | **${infrastructure.length}** |\n` +
     `| Lotes | **${batches.length}** (${BATCH.CONTROLLERS_PER_BATCH} controladores c/u) |\n` +
     `| OpenAPI | ${openapiText ? "✅ encontrado" : "⚠️ no encontrado"} |\n\n` +
-    `Se procesará en **2 iteraciones** para maximizar la calidad del diagrama.\n\n`
+    `### Plan de lotes\n\n` +
+    `| Lote | Controladores | Archivos | Líneas | Contexto |\n` +
+    `|------|---------------|----------|--------|----------|\n` +
+    `${batchTableRows}\n\n` +
+    `Se procesará en **2 iteraciones**: boceto inicial → diagrama detallado enriquecido.\n\n`
   );
 
-  log(`[ExplainHandler] ${controllers.length} controllers, ${services.length} services, ${repositories.length} repos/gateways, ${infrastructure.length} infra, ${batches.length} batches`);
+  log(`[ExplainHandler] ${controllers.length} controllers (${totalLines} lines), ${services.length} services, ${repositories.length} repos, ${infrastructure.length} infra, ${batches.length} batches`);
 
   // ── Iteration 1: generate raw diagrams ─────────────────────────────────────
   stream.markdown(`### Iteración 1 — Generando diagramas por lote…\n\n`);
@@ -84,15 +103,21 @@ export async function handleExplainCommand(
 
   for (let i = 0; i < batches.length; i++) {
     if (token.isCancellationRequested) { break; }
-    const batch = batches[i];
-    const names = batch.map((c) => shortName(c.relPath));
-    stream.progress(`Lote ${i + 1}/${batches.length}: ${names.join(", ")}…`);
+    const batch      = batches[i];
+    const names      = batch.map((c) => shortName(c.relPath));
+    const batchLines = batch.reduce((s, c) => s + c.lineCount, 0);
+    const batchKb    = Math.round(batch.reduce((s, c) => s + c.charCount, 0) / 1024 * 10) / 10;
+
+    stream.progress(`Iteración 1 — Lote ${i + 1}/${batches.length}: ${names.join(", ")} (${batchLines} líneas)…`);
 
     const raw = await generateRawDiagrams(batch, openapiText, resolvedModel, token);
     batchResults.push({ batchIndex: i, controllerNames: names, rawDiagrams: raw, refinedDiagrams: "" });
 
-    stream.markdown(`- ✅ Lote ${i + 1}: \`${names.join("`, `")}\`\n`);
-    log(`[ExplainHandler] Batch ${i + 1} iteration 1 done (${raw.length} chars)`);
+    stream.markdown(
+      `- ✅ **Lote ${i + 1}/${batches.length}** — \`${names.join("`, `")}\`\n` +
+      `  📊 ${batch.length} archivo(s) · **${batchLines.toLocaleString()} líneas** · **${batchKb} KB** de contexto enviado al LLM\n`
+    );
+    log(`[ExplainHandler] Batch ${i + 1} iter1 done — ${batchLines} lines, ${raw.length} chars output`);
   }
 
   // ── Iteration 2: refine with service implementations ───────────────────────
@@ -103,7 +128,7 @@ export async function handleExplainCommand(
     const result = batchResults[i];
     const batch  = batches[i];
 
-    stream.progress(`Refinando lote ${i + 1}/${batchResults.length}: ${result.controllerNames.join(", ")}…`);
+    stream.progress(`Iteración 2 — Lote ${i + 1}/${batchResults.length}: analizando dependencias…`);
 
     // Find services referenced by this batch's controllers
     const relevantServices = findRelevantServices(batch, services);
@@ -111,11 +136,25 @@ export async function handleExplainCommand(
     const relevantRepositories = findRelevantRepositories(relevantServices, repositories);
     // Find infrastructure (Redis, events, async, REST clients) referenced anywhere in the chain
     const relevantInfrastructure = findRelevantInfrastructure(relevantServices, relevantRepositories, infrastructure);
+
+    const ctxLines =
+      relevantServices.reduce((s, f) => s + f.content.split("\n").length, 0) +
+      relevantRepositories.reduce((s, f) => s + f.content.split("\n").length, 0) +
+      relevantInfrastructure.reduce((s, f) => s + f.content.split("\n").length, 0);
+    const ctxKb = Math.round(
+      ([...relevantServices, ...relevantRepositories, ...relevantInfrastructure]
+        .reduce((s, f) => s + f.content.length, 0)) / 1024 * 10
+    ) / 10;
+
     const refined = await refineDiagrams(batch, relevantServices, relevantRepositories, relevantInfrastructure, result.rawDiagrams, resolvedModel, token);
     result.refinedDiagrams = refined;
 
-    stream.markdown(`- ✅ Lote ${i + 1} refinado (${relevantServices.length} svc, ${relevantRepositories.length} repo, ${relevantInfrastructure.length} infra)\n`);
-    log(`[ExplainHandler] Batch ${i + 1} iteration 2 done (${refined.length} chars)`);
+    stream.markdown(
+      `- ✅ **Lote ${i + 1}/${batchResults.length}** refinado — ` +
+      `${relevantServices.length} svc · ${relevantRepositories.length} repo · ${relevantInfrastructure.length} infra\n` +
+      `  📊 Contexto adicional: **${ctxLines.toLocaleString()} líneas** · **${ctxKb} KB**\n`
+    );
+    log(`[ExplainHandler] Batch ${i + 1} iter2 done — ctx ${ctxLines} lines, output ${refined.length} chars`);
   }
 
   // ── Write output file ──────────────────────────────────────────────────────
@@ -252,11 +291,18 @@ async function refineDiagrams(
     : "_No se encontraron archivos de infraestructura dedicados. Detecta Redis/eventos/async por anotaciones en el código._";
 
   const msg = vscode.LanguageModelChatMessage.User(
-    `Eres un arquitecto de software senior. Tienes el boceto de diagramas de secuencia de la iteración 1\n` +
+    `Eres un arquitecto de software senior. Tienes el boceto (iteración 1) con documentación y diagramas iniciales,\n` +
     `y ahora también las implementaciones reales de servicios, repositorios, gateways y clientes.\n\n` +
 
-    `Tu tarea es producir la versión DEFINITIVA y DETALLADA de cada diagrama. Para cada endpoint:\n\n` +
+    `Tu tarea es producir la versión DEFINITIVA de cada endpoint. Para cada uno debes MEJORAR DOS COSAS:\n\n` +
 
+    `**A — Mejora la documentación del endpoint:**\n` +
+    `- Actualiza DESCRIPCION con más precisión técnica\n` +
+    `- Completa PARAMETROS con tipos exactos, validaciones (@NotNull, @Valid, @Size, etc.) y valores por defecto\n` +
+    `- Enriquece RESPUESTA con los códigos HTTP reales (200, 201, 400, 404, 409, 500) y qué retorna cada uno\n` +
+    `- Mejora FLUJO con los pasos reales del código (incluye cache, transacciones, eventos, async)\n\n` +
+
+    `**B — Mejora el diagrama de secuencia:**\n` +
     `1. **Contrasta el boceto con el código real** — identifica qué falta, qué está mal nombrado o qué capas no aparecen.\n` +
     `2. **Expande capa por capa** en orden estricto:\n` +
     `   Client → Controller → (Filter/Interceptor si existe) → Service → (orquestación entre Services)\n` +
@@ -373,20 +419,31 @@ function extractToc(markdown: string): string {
 async function findControllers(): Promise<ControllerFile[]> {
   const patterns = [
     "**/*Controller.*",
+    "**/*Controllers.*",
     "**/*Resource.*",
+    "**/*Resources.*",
     "**/*Router.*",
     "**/*Routes.*",
+    "**/*Endpoint.*",
+    "**/*Endpoints.*",
+    "**/*Api.*",
+    "**/*REST.*",
+    "**/*Rest.*",
   ];
 
-  const uris = await findFilesByPatterns(patterns);
+  // Use higher limit per pattern to avoid missing files in large codebases
+  const uris = await findFilesByPatterns(patterns, 300);
   const result: ControllerFile[] = [];
 
   for (const uri of uris) {
     if (!SRC_EXTENSIONS.includes(extOf(uri))) { continue; }
     try {
-      const bytes   = await vscode.workspace.fs.readFile(uri);
-      const content = Buffer.from(bytes).toString("utf-8").slice(0, BATCH.MAX_CHARS_CONTROLLER);
-      result.push({ uri, relPath: vscode.workspace.asRelativePath(uri), content });
+      const bytes      = await vscode.workspace.fs.readFile(uri);
+      const full       = Buffer.from(bytes).toString("utf-8");
+      const content    = full.slice(0, BATCH.MAX_CHARS_CONTROLLER);
+      const lineCount  = full.split("\n").length;
+      const charCount  = full.length;
+      result.push({ uri, relPath: vscode.workspace.asRelativePath(uri), content, lineCount, charCount });
     } catch { /* skip */ }
   }
 
@@ -516,11 +573,11 @@ async function findOpenApiContent(): Promise<string> {
   return parts.join("\n\n---\n\n");
 }
 
-async function findFilesByPatterns(patterns: string[]): Promise<vscode.Uri[]> {
+async function findFilesByPatterns(patterns: string[], limitPerPattern = 200): Promise<vscode.Uri[]> {
   const all: vscode.Uri[] = [];
   for (const pattern of patterns) {
     try {
-      const found = await vscode.workspace.findFiles(pattern, EXCLUDE_GLOB, 50);
+      const found = await vscode.workspace.findFiles(pattern, EXCLUDE_GLOB, limitPerPattern);
       all.push(...found);
     } catch { /* skip */ }
   }
