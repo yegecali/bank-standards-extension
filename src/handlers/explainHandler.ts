@@ -46,9 +46,10 @@ export async function handleExplainCommand(
   // ── Discovery ──────────────────────────────────────────────────────────────
   stream.progress("Buscando controladores y contratos OpenAPI…");
 
-  const [controllers, services, openapiText] = await Promise.all([
+  const [controllers, services, repositories, openapiText] = await Promise.all([
     findControllers(),
     findServices(),
+    findRepositories(),
     findOpenApiContent(),
   ]);
 
@@ -67,12 +68,13 @@ export async function handleExplainCommand(
     `| | |\n|---|---|\n` +
     `| Controladores | **${controllers.length}** |\n` +
     `| Servicios | **${services.length}** |\n` +
+    `| Repos/Gateways/Clientes | **${repositories.length}** |\n` +
     `| Lotes | **${batches.length}** (${BATCH.CONTROLLERS_PER_BATCH} controladores c/u) |\n` +
     `| OpenAPI | ${openapiText ? "✅ encontrado" : "⚠️ no encontrado"} |\n\n` +
     `Se procesará en **2 iteraciones** para maximizar la calidad del diagrama.\n\n`
   );
 
-  log(`[ExplainHandler] ${controllers.length} controllers, ${services.length} services, ${batches.length} batches`);
+  log(`[ExplainHandler] ${controllers.length} controllers, ${services.length} services, ${repositories.length} repos/gateways, ${batches.length} batches`);
 
   // ── Iteration 1: generate raw diagrams ─────────────────────────────────────
   stream.markdown(`### Iteración 1 — Generando diagramas por lote…\n\n`);
@@ -103,10 +105,12 @@ export async function handleExplainCommand(
 
     // Find services referenced by this batch's controllers
     const relevantServices = findRelevantServices(batch, services);
-    const refined = await refineDiagrams(batch, relevantServices, result.rawDiagrams, resolvedModel, token);
+    // Find repositories/gateways/clients referenced by those services
+    const relevantRepositories = findRelevantRepositories(relevantServices, repositories);
+    const refined = await refineDiagrams(batch, relevantServices, relevantRepositories, result.rawDiagrams, resolvedModel, token);
     result.refinedDiagrams = refined;
 
-    stream.markdown(`- ✅ Lote ${i + 1} refinado (${relevantServices.length} servicio(s) analizados)\n`);
+    stream.markdown(`- ✅ Lote ${i + 1} refinado (${relevantServices.length} servicio(s), ${relevantRepositories.length} repo(s)/gateway(s))\n`);
     log(`[ExplainHandler] Batch ${i + 1} iteration 2 done (${refined.length} chars)`);
   }
 
@@ -196,6 +200,7 @@ async function generateRawDiagrams(
 async function refineDiagrams(
   batch: ControllerFile[],
   relevantServices: ServiceFile[],
+  relevantRepositories: ServiceFile[],
   previousDiagrams: string,
   model: vscode.LanguageModelChat,
   token: vscode.CancellationToken
@@ -210,6 +215,12 @@ async function refineDiagrams(
         .join("\n\n")
     : "_No se encontraron implementaciones de servicios._";
 
+  const repositorySection = relevantRepositories.length > 0
+    ? relevantRepositories
+        .map((r) => `### ${r.name}\n\`\`\`\n${r.content}\n\`\`\``)
+        .join("\n\n")
+    : "_No se encontraron implementaciones de repositorios/gateways._";
+
   const msg = vscode.LanguageModelChatMessage.User(
     `Tienes los diagramas de secuencia iniciales generados a partir de los controladores.\n` +
     `Ahora también tienes las implementaciones de los servicios que esos controladores invocan.\n\n` +
@@ -220,7 +231,9 @@ async function refineDiagrams(
     `- No se muestran llamadas al repositorio/DB con el método exacto\n` +
     `- Hay lógica condicional en el servicio que no está representada (validaciones, reglas de negocio)\n` +
     `- Hay llamadas a servicios externos, APIs, colas (Kafka, SQS, RabbitMQ)\n` +
-    `- Hay flujos de error/excepción relevantes\n\n` +
+    `- Hay flujos de error/excepción relevantes\n` +
+    `- Faltan llamadas a repositorios, gateways o clientes con el nombre exacto del método\n` +
+    `- No se muestran llamadas HTTP a clientes externos (Feign, RestTemplate, axios, fetch)\n\n` +
 
     `Si un diagrama ya está correcto y completo, devuélvelo sin cambios.\n\n` +
 
@@ -235,7 +248,8 @@ async function refineDiagrams(
 
     `--- DIAGRAMAS INICIALES (iteración 1) ---\n${previousDiagrams}\n\n` +
     `--- CONTROLADORES ---\n${controllerSection}\n\n` +
-    `--- IMPLEMENTACIONES DE SERVICIOS ---\n${serviceSection}`
+    `--- IMPLEMENTACIONES DE SERVICIOS ---\n${serviceSection}\n\n` +
+    `--- IMPLEMENTACIONES DE REPOSITORIOS/GATEWAYS/CLIENTES ---\n${repositorySection}`
   );
 
   return await callModel(model, msg, token);
@@ -332,6 +346,35 @@ async function findServices(): Promise<ServiceFile[]> {
   return result;
 }
 
+async function findRepositories(): Promise<ServiceFile[]> {
+  const patterns = [
+    "**/*Repository.*",
+    "**/*RepositoryImpl.*",
+    "**/*Repo.*",
+    "**/*Gateway.*",
+    "**/*GatewayImpl.*",
+    "**/*Client.*",
+    "**/*Adapter.*",
+    "**/*Dao.*",
+  ];
+
+  const uris = await findFilesByPatterns(patterns);
+  const result: ServiceFile[] = [];
+
+  for (const uri of uris) {
+    if (!SRC_EXTENSIONS.includes(extOf(uri))) { continue; }
+    try {
+      const bytes   = await vscode.workspace.fs.readFile(uri);
+      const content = Buffer.from(bytes).toString("utf-8").slice(0, BATCH.MAX_CHARS_SERVICE);
+      const name    = baseName(uri).replace(/\.[^.]+$/, "").toLowerCase();
+      result.push({ uri, relPath: vscode.workspace.asRelativePath(uri), name, content });
+    } catch { /* skip */ }
+  }
+
+  log(`[ExplainHandler] Found ${result.length} repository/gateway/client files`);
+  return result;
+}
+
 async function findOpenApiContent(): Promise<string> {
   const patterns = [
     "**/openapi.{yaml,yml,json}",
@@ -377,6 +420,11 @@ async function findFilesByPatterns(patterns: string[]): Promise<vscode.Uri[]> {
 function findRelevantServices(batch: ControllerFile[], services: ServiceFile[]): ServiceFile[] {
   const combined = batch.map((c) => c.content).join("\n").toLowerCase();
   return services.filter((s) => combined.includes(s.name));
+}
+
+function findRelevantRepositories(services: ServiceFile[], repositories: ServiceFile[]): ServiceFile[] {
+  const combined = services.map((s) => s.content).join("\n").toLowerCase();
+  return repositories.filter((r) => combined.includes(r.name));
 }
 
 // ─── LLM call helper ─────────────────────────────────────────────────────────

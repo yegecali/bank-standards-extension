@@ -2,7 +2,7 @@
   "name": "company-coding-standard",
   "displayName": "Company Coding Standard",
   "description": "Define and enforce your company's development standards directly in VSCode — powered by your own knowledge base (Notion or Confluence). Naming conventions, test standards, project scaffolding, prompt library, Jira integration, and AI agent.",
-  "version": "0.0.46",
+  "version": "0.0.47",
   "publisher": "yemicanchari",
   "preview": true,
   "license": "MIT",
@@ -300,6 +300,11 @@
             "Race conditions / TOCTOU — operaciones check-then-act sin sincronización"
           ],
           "description": "Lista de riesgos de seguridad que /security evaluará en el código. Cada entrada puede incluir descripción después de ' — '. Puedes agregar riesgos específicos de tu empresa."
+        },
+        "companyStandards.iriusriskReportPath": {
+          "type": "string",
+          "default": "",
+          "description": "Ruta al reporte de IriusRisk (.xml o .json). Los countermeasures con estado OPEN o REQUIRED se añaden automáticamente al checklist de riesgos del comando /security."
         },
         "companyStandards.specialty": {
           "type": "string",

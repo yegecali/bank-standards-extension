@@ -47,6 +47,23 @@ export async function handleSecurityCommand(
   const config = vscode.workspace.getConfiguration("companyStandards");
   const risks: string[] = config.get<string[]>("securityRisks") ?? DEFAULT_SECURITY_RISKS;
 
+  // ── Load IriusRisk countermeasures (if configured) ────────────────────────
+  const iriusriskPath = config.get<string>("iriusriskReportPath") ?? "";
+  if (iriusriskPath.trim()) {
+    try {
+      const extra = await loadIriusRiskCountermeasures(iriusriskPath.trim());
+      if (extra.length > 0) {
+        risks.push(...extra);
+        log(`[SecurityHandler] Loaded ${extra.length} IriusRisk countermeasures from ${iriusriskPath}`);
+      } else {
+        stream.markdown(`⚠️ IriusRisk: no se encontraron countermeasures OPEN/REQUIRED en \`${iriusriskPath}\`.\n\n`);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      stream.markdown(`⚠️ No se pudo leer el reporte IriusRisk (\`${iriusriskPath}\`): ${msg}\n\n`);
+    }
+  }
+
   // ── Discovery ─────────────────────────────────────────────────────────────
   stream.progress("Buscando archivos fuente para análisis de seguridad…");
   const files = await collectSourceFiles();
@@ -63,7 +80,7 @@ export async function handleSecurityCommand(
     `| | |\n|---|---|\n` +
     `| Archivos analizados | **${files.length}** |\n` +
     `| Lotes | **${batches.length}** (${BATCH.FILES_PER_BATCH} archivos c/u) |\n` +
-    `| Riesgos configurados | **${risks.length}** |\n\n` +
+    `| Riesgos configurados | **${risks.length}**${iriusriskPath.trim() ? ` (incl. IriusRisk)` : ""} |\n\n` +
     `**Riesgos a evaluar:**\n` +
     risks.map((r) => `- ${r.split(" — ")[0]}`).join("\n") +
     `\n\nSe procesará en **2 iteraciones**: detección inicial → análisis profundo con soluciones.\n\n`
@@ -254,7 +271,7 @@ async function deepAnalysis(
 function buildRiskSummary(risks: string[], allFindings: string, batches: BatchFinding[]): RiskSummaryEntry[] {
   return risks.map((risk) => {
     const riskName = risk.split(" — ")[0].toLowerCase();
-    const findings = [...allFindings.matchAll(/## FINDING[\s\S]*?(?=## FINDING|$)/gm)];
+    const findings = [...allFindings.matchAll(/## FINDING[\s\S]*?(?=## FINDING|$)/g)];
 
     const matchingFindings = findings.filter((f) => {
       const block = f[0].toLowerCase();
@@ -336,7 +353,7 @@ function buildOutputFile(
   ];
 
   // Format findings as readable markdown
-  const findingBlocks = [...allFindings.matchAll(/## FINDING[\s\S]*?(?=## FINDING|$)/gm)];
+  const findingBlocks = [...allFindings.matchAll(/## FINDING[\s\S]*?(?=## FINDING|$)/g)];
   const confirmed     = findingBlocks.filter((f) => !/FALSO_POSITIVO/i.test(f[0]) && !/ESTADO:\s*FALSO/i.test(f[0]));
   const falsePos      = findingBlocks.filter((f) => /FALSO_POSITIVO/i.test(f[0]) || /ESTADO:\s*FALSO/i.test(f[0]));
 
@@ -500,5 +517,54 @@ async function callModel(
     }
   }
   return result;
+}
+
+// ─── IriusRisk report loader ──────────────────────────────────────────────────
+
+async function loadIriusRiskCountermeasures(reportPath: string): Promise<string[]> {
+  const uri = reportPath.startsWith("/")
+    ? vscode.Uri.file(reportPath)
+    : vscode.Uri.joinPath(vscode.workspace.workspaceFolders![0].uri, reportPath);
+
+  const bytes = await vscode.workspace.fs.readFile(uri);
+  const text  = Buffer.from(bytes).toString("utf-8");
+  const isXml = reportPath.toLowerCase().endsWith(".xml");
+
+  if (isXml) {
+    // Simple regex parse — no external deps
+    // Matches <countermeasure ... state="OPEN" ... name="..." desc="..." />
+    // or      <countermeasure ... state="REQUIRED" ... />
+    const results: string[] = [];
+    const re = /<countermeasure\b([^>]*)>/gi;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text)) !== null) {
+      const attrs = m[1];
+      const state = attrs.match(/state="([^"]+)"/i)?.[1]?.toUpperCase() ?? "";
+      if (state !== "OPEN" && state !== "REQUIRED") { continue; }
+      const name = attrs.match(/name="([^"]+)"/i)?.[1]?.trim() ?? "";
+      const desc = attrs.match(/desc="([^"]+)"/i)?.[1]?.trim() ?? "";
+      if (name) {
+        results.push(desc ? `${name} — ${desc}` : name);
+      }
+    }
+    return results;
+  } else {
+    // JSON format
+    const data = JSON.parse(text);
+    const items: unknown[] = Array.isArray(data)
+      ? data
+      : (data as Record<string, unknown>).countermeasures as unknown[] ?? [];
+    return items
+      .filter((item): item is Record<string, unknown> =>
+        typeof item === "object" && item !== null &&
+        ["OPEN", "REQUIRED"].includes(String((item as Record<string, unknown>).state ?? "").toUpperCase())
+      )
+      .map((item) => {
+        const name = String(item.name ?? "").trim();
+        const desc = String(item.desc ?? item.description ?? "").trim();
+        return desc ? `${name} — ${desc}` : name;
+      })
+      .filter((s) => s.length > 0);
+  }
 }
 

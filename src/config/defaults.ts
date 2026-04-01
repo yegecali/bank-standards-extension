@@ -128,4 +128,9 @@ export const DEFAULT_SECURITY_RISKS: string[] = [
   "Manejo inseguro de errores — stack traces, mensajes internos o información del sistema expuesta al cliente",
   "CSRF — operaciones de escritura sin token de verificación de origen",
   "Race conditions / TOCTOU — operaciones check-then-act sin sincronización",
+  "Business Logic Attacks — secuencias válidas usadas incorrectamente para burlar reglas de negocio (límites de transacción, flujos de pago)",
+  "Abuso de funcionalidad y enumeración — ausencia de rate limiting, posibilidad de brute-force en endpoints de autenticación o consulta",
+  "Gestión insegura de tokens OAuth/JWT — tokens sin expiración (exp), sin revocación, firmados con algoritmos débiles (alg:none, HS256 con secreto débil)",
+  "Open Redirect — redirecciones a URLs externas sin validar, explotables en ataques de phishing o robo de tokens",
+  "Fijación de sesión — reutilización del session ID antes y después del login sin regeneración del identificador",
 ];
