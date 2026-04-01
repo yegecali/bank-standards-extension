@@ -47,12 +47,13 @@ export async function handleExplainCommand(
   // ── Discovery ──────────────────────────────────────────────────────────────
   stream.progress("Buscando controladores y contratos OpenAPI…");
 
-  const [controllers, services, repositories, infrastructure, openapiText] = await Promise.all([
+  const [controllers, services, repositories, infrastructure, openapiText, allSourceFiles] = await Promise.all([
     findControllers(),
     findServices(),
     findRepositories(),
     findInfrastructure(),
     findOpenApiContent(),
+    findAllSourceFiles(),
   ]);
 
   if (controllers.length === 0) {
@@ -85,6 +86,7 @@ export async function handleExplainCommand(
     `| Servicios | **${services.length}** |\n` +
     `| Repos/Gateways/Clientes | **${repositories.length}** |\n` +
     `| Infraestructura (Redis/Eventos/Async) | **${infrastructure.length}** |\n` +
+    `| Total archivos fuente (Capa 5) | **${allSourceFiles.length}** |\n` +
     `| Lotes | **${batches.length}** (${BATCH.CONTROLLERS_PER_BATCH} controladores c/u) |\n` +
     `| OpenAPI | ${openapiText ? "✅ encontrado" : "⚠️ no encontrado"} |\n\n` +
     `### Plan de lotes\n\n` +
@@ -207,6 +209,48 @@ export async function handleExplainCommand(
       log(`[ExplainHandler] Batch ${i + 1} layer4 done — ${diagram.length} chars`);
     } else {
       stream.markdown(`#### 🔴 Capa 4 — Infraestructura\n⚠️ No se detectó infraestructura dedicada (Redis/Eventos/Async) para este lote\n\n`);
+    }
+
+    // ── Capa 5: Archivos no clasificados ─────────────────────────────────────
+    const coveredPaths = new Set<string>([
+      ...batch.map((c) => c.uri.path),
+      ...relevantServices.map((f) => f.uri.path),
+      ...relevantRepositories.map((f) => f.uri.path),
+      ...relevantInfrastructure.filter((f) => !f.name.includes("[inline:")).map((f) => f.uri.path),
+    ]);
+
+    const relevantUncovered = findUncoveredFiles(
+      batch,
+      [...relevantServices, ...relevantRepositories],
+      allSourceFiles,
+      coveredPaths
+    );
+
+    if (relevantUncovered.length > 0 && !token.isCancellationRequested) {
+      const uncovLines = relevantUncovered.reduce((s, f) => s + f.content.split("\n").length, 0);
+      const uncovKb    = Math.round(relevantUncovered.reduce((s, f) => s + f.content.length, 0) / 1024 * 10) / 10;
+
+      stream.markdown(
+        `#### ⚪ Capa 5 — Archivos no clasificados\n` +
+        `📄 **${relevantUncovered.length}** archivo(s) · **${uncovLines.toLocaleString()} líneas** · **${uncovKb} KB**\n` +
+        `📎 ${relevantUncovered.map((f) => `\`${shortName(f.relPath)}\``).join(", ")}\n\n`
+      );
+      stream.progress(`Lote ${i + 1} — Capa 5: escaneando archivos no clasificados…`);
+
+      diagram = await enrichWithLayer(diagram, "ARCHIVOS NO CLASIFICADOS (helpers, validators, exception handlers, config, etc.)", relevantUncovered,
+        `- Si es un @ControllerAdvice o ExceptionHandler: añade los bloques alt/else de error que falten en los endpoints\n` +
+        `- Si es un validator, converter o mapper: incorpóralo como paso intermedio en el flujo donde se llame\n` +
+        `- Si es un helper o util: muéstralo solo si hay una llamada directa desde un participante ya en el diagrama\n` +
+        `- Si es una clase de configuración (Security, CORS, etc.): añade Note sobre el controller si afecta el flujo\n` +
+        `- Si es un filter, interceptor o middleware: colócalo antes del controller en el flujo HTTP\n` +
+        `- Si no encuentras conexión directa con ningún endpoint del diagrama: omítelo (no inventes llamadas)\n` +
+        `- No duplica participantes ya existentes — usa el alias exacto del diagrama actual`,
+        resolvedModel, token);
+
+      stream.markdown(`✅ Diagrama completado con componentes de soporte\n\n`);
+      log(`[ExplainHandler] Batch ${i + 1} layer5 done — ${diagram.length} chars`);
+    } else {
+      stream.markdown(`#### ⚪ Capa 5 — Archivos no clasificados\n✅ No se encontraron archivos adicionales referenciados por este lote\n\n`);
     }
 
     batchResults.push({ batchIndex: i, controllerNames: names, finalDiagram: diagram });
@@ -574,6 +618,29 @@ async function findRepositories(): Promise<ServiceFile[]> {
   return result;
 }
 
+/**
+ * Discovers ALL source files in the workspace by extension (not by name pattern).
+ * Used as the pool for Capa 5 — any file not caught by layers 1-4 is a candidate.
+ * Capped at MAX_FILES * 3 to avoid performance issues in large projects.
+ */
+async function findAllSourceFiles(): Promise<ServiceFile[]> {
+  const patterns = SRC_EXTENSIONS.map((ext) => `**/*${ext}`);
+  const uris = await findFilesByPatterns(patterns, BATCH.MAX_FILES * 3);
+  const result: ServiceFile[] = [];
+
+  for (const uri of uris) {
+    try {
+      const bytes   = await vscode.workspace.fs.readFile(uri);
+      const content = Buffer.from(bytes).toString("utf-8").slice(0, BATCH.MAX_CHARS_SERVICE);
+      const name    = baseName(uri).replace(/\.[^.]+$/, "").toLowerCase();
+      result.push({ uri, relPath: vscode.workspace.asRelativePath(uri), name, content });
+    } catch { /* skip */ }
+  }
+
+  log(`[ExplainHandler] Found ${result.length} total source files (Capa 5 pool)`);
+  return result;
+}
+
 async function findOpenApiContent(): Promise<string> {
   const patterns = [
     "**/openapi.{yaml,yml,json}",
@@ -691,6 +758,32 @@ function extractInlineInfraHints(files: ServiceFile[]): ServiceFile[] {
   }
 
   return hints;
+}
+
+/**
+ * Finds source files not covered by layers 1-4 that are still referenced by the
+ * current batch. Searches through controller + already-matched layer content so
+ * transitively-used helpers (validators, converters, exception handlers, etc.)
+ * are also picked up. Capped at 15 files to avoid context explosion.
+ */
+function findUncoveredFiles(
+  batch: ControllerFile[],
+  coveredLayerFiles: ServiceFile[],
+  allSourceFiles: ServiceFile[],
+  coveredPaths: Set<string>,
+  maxFiles = 15
+): ServiceFile[] {
+  const uncovered = allSourceFiles.filter((f) => !coveredPaths.has(f.uri.path));
+
+  // Search in the content of all already-processed files for this batch
+  const searchContent = [
+    ...batch.map((c) => c.content),
+    ...coveredLayerFiles.map((f) => f.content),
+  ].join("\n").toLowerCase();
+
+  return uncovered
+    .filter((f) => isReferenced(f.name, searchContent))
+    .slice(0, maxFiles);
 }
 
 function findRelevantServices(batch: ControllerFile[], services: ServiceFile[]): ServiceFile[] {
