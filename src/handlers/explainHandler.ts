@@ -163,31 +163,46 @@ async function generateRawDiagrams(
     : "";
 
   const msg = vscode.LanguageModelChatMessage.User(
-    `Eres un arquitecto de software. Analiza los siguientes controladores` +
+    `Eres un arquitecto de software senior. Analiza los siguientes controladores` +
     (openapiText ? " y su contrato OpenAPI" : "") + `.\n\n` +
 
-    `Para CADA endpoint que encuentres, genera un diagrama de secuencia Mermaid detallado que muestre:\n` +
-    `- El flujo completo desde el cliente hasta la respuesta\n` +
-    `- Llamadas a servicios, repositorios, cache (Redis/Memcached), bases de datos\n` +
-    `- Condicionales importantes (alt/else/opt) como validaciones, manejo de errores, casos de negocio\n` +
-    `- Transformaciones o mapeos de datos relevantes\n\n` +
+    `Para CADA endpoint que encuentres realiza DOS cosas:\n\n` +
 
-    `FORMATO DE SALIDA OBLIGATORIO — usa exactamente estos marcadores:\n` +
-    `## CONTROLLER: NombreExactoDelControlador\n` +
+    `**PARTE A — Documentación del endpoint:**\n` +
+    `Describe con precisión qué hace el endpoint, sus parámetros, respuesta y flujo en prosa.\n\n` +
+
+    `**PARTE B — Diagrama de secuencia boceto (capa por capa):**\n` +
+    `Genera un diagrama Mermaid que muestre las capas en orden estricto:\n` +
+    `  Client → Controller → Service → Repository/Gateway → DB/ExternalAPI\n` +
+    `Usa los nombres reales de clases y métodos que veas en el código.\n` +
+    `En este boceto incluye el flujo principal (happy path) y un alt para el error más obvio.\n\n` +
+
+    `FORMATO DE SALIDA OBLIGATORIO — usa exactamente estos marcadores:\n\n` +
+    `## CONTROLLER: NombreExactoDelControlador\n\n` +
     `### ENDPOINT: METHOD /ruta/exacta\n` +
     `DESCRIPCION: qué hace este endpoint en una línea\n` +
+    `PARAMETROS: param1 (tipo) — descripción, param2 (tipo) — descripción\n` +
+    `RESPUESTA: qué retorna en éxito y en error\n` +
+    `FLUJO: descripción en prosa del flujo de ejecución en 2-3 líneas\n\n` +
     "```mermaid\n" +
     `sequenceDiagram\n` +
     `  participant Client\n` +
+    `  participant Controller as NombreController\n` +
+    `  participant Service as NombreService\n` +
+    `  participant Repository as NombreRepo\n` +
+    `  participant DB\n` +
+    `  Client->>Controller: METHOD /ruta (params)\n` +
+    `  Controller->>Service: metodoExacto(args)\n` +
     `  ...\n` +
     "```\n\n" +
 
-    `Reglas:\n` +
-    `- Usa \`->>>\` para llamadas síncronas, \`-->>>\` para respuestas\n` +
+    `REGLAS MERMAID OBLIGATORIAS:\n` +
+    `- Usa \`->>\` para llamadas síncronas (NO ->>>)\n` +
+    `- Usa \`-->>\` para respuestas (NO -->>>)\n` +
     `- Usa \`alt\`/\`else\`/\`end\` para condicionales\n` +
     `- Usa \`opt\` para flujos opcionales\n` +
-    `- No inventes componentes que no estén en el código\n` +
-    `- Si el código llama a un método de servicio, muestra el nombre exacto del método\n\n` +
+    `- Los nombres de participant deben coincidir exactamente con los alias declarados\n` +
+    `- No inventes clases ni métodos que no estén en el código\n\n` +
 
     `${controllerSection}\n\n${openapiSection}`
   );
@@ -222,34 +237,55 @@ async function refineDiagrams(
     : "_No se encontraron implementaciones de repositorios/gateways._";
 
   const msg = vscode.LanguageModelChatMessage.User(
-    `Tienes los diagramas de secuencia iniciales generados a partir de los controladores.\n` +
-    `Ahora también tienes las implementaciones de los servicios que esos controladores invocan.\n\n` +
+    `Eres un arquitecto de software senior. Tienes el boceto de diagramas de secuencia de la iteración 1\n` +
+    `y ahora también las implementaciones reales de servicios, repositorios, gateways y clientes.\n\n` +
 
-    `Revisa cada diagrama y MEJÓRALO si:\n` +
-    `- Faltan llamadas a métodos específicos del servicio (incluye nombres exactos de métodos)\n` +
-    `- No se muestran verificaciones de cache (Redis/Memcached/EhCache)\n` +
-    `- No se muestran llamadas al repositorio/DB con el método exacto\n` +
-    `- Hay lógica condicional en el servicio que no está representada (validaciones, reglas de negocio)\n` +
-    `- Hay llamadas a servicios externos, APIs, colas (Kafka, SQS, RabbitMQ)\n` +
-    `- Hay flujos de error/excepción relevantes\n` +
-    `- Faltan llamadas a repositorios, gateways o clientes con el nombre exacto del método\n` +
-    `- No se muestran llamadas HTTP a clientes externos (Feign, RestTemplate, axios, fetch)\n\n` +
+    `Tu tarea es producir la versión DEFINITIVA y DETALLADA de cada diagrama. Para cada endpoint:\n\n` +
 
-    `Si un diagrama ya está correcto y completo, devuélvelo sin cambios.\n\n` +
+    `1. **Contrasta el boceto con el código real** — identifica qué falta, qué está mal nombrado o qué capas no aparecen.\n` +
+    `2. **Expande capa por capa** en orden estricto:\n` +
+    `   Client → Controller → (Interceptor/Filter si existe) → Service → (otra Service si hay orquestación)\n` +
+    `   → Repository/Gateway/Client → DB / API externa / Cola (Kafka, SQS, RabbitMQ)\n` +
+    `3. **Incluye interacciones con beans y configuración**:\n` +
+    `   - Beans de Spring/CDI/Quarkus inyectados (nombre exacto de clase)\n` +
+    `   - Mappers, Converters, Validators que se invocan\n` +
+    `   - Cache (Redis, EhCache, Caffeine): muestra el check cache → miss/hit como alt\n` +
+    `   - Transacciones (@Transactional): marca con note el inicio/commit/rollback\n` +
+    `4. **Muestra todos los flujos condicionales relevantes**:\n` +
+    `   - Validaciones de negocio (alt éxito / else error de validación)\n` +
+    `   - Manejo de excepciones: qué lanza el servicio, cómo lo captura el controller\n` +
+    `   - Flujos opcionales (opt) como notificaciones, eventos, auditoría\n` +
+    `5. **Usa los nombres exactos** de clases y métodos del código (no nombres genéricos).\n\n` +
 
-    `MISMO FORMATO DE SALIDA OBLIGATORIO:\n` +
-    `## CONTROLLER: NombreExactoDelControlador\n` +
+    `MISMO FORMATO DE SALIDA OBLIGATORIO:\n\n` +
+    `## CONTROLLER: NombreExactoDelControlador\n\n` +
     `### ENDPOINT: METHOD /ruta/exacta\n` +
     `DESCRIPCION: qué hace este endpoint en una línea\n` +
+    `PARAMETROS: igual que iteración 1 (actualiza si encontraste más detalle)\n` +
+    `RESPUESTA: igual que iteración 1\n` +
+    `FLUJO: descripción en prosa actualizada con los detalles encontrados en el código\n\n` +
     "```mermaid\n" +
     `sequenceDiagram\n` +
+    `  participant Client\n` +
+    `  participant Controller as NombreController\n` +
+    `  participant Service as NombreService\n` +
+    `  participant Repository as NombreRepo\n` +
+    `  participant DB\n` +
     `  ...\n` +
     "```\n\n" +
 
-    `--- DIAGRAMAS INICIALES (iteración 1) ---\n${previousDiagrams}\n\n` +
+    `REGLAS MERMAID OBLIGATORIAS (igual que iteración 1):\n` +
+    `- Usa \`->>\` para llamadas síncronas (NO ->>>)\n` +
+    `- Usa \`-->>\` para respuestas (NO -->>>)\n` +
+    `- Usa \`alt\`/\`else\`/\`end\` para condicionales, \`opt\` para flujos opcionales\n` +
+    `- Usa \`Note over X,Y: texto\` para marcar transacciones, eventos o anotaciones importantes\n` +
+    `- Los alias de participant deben coincidir exactamente con los usados en las flechas\n` +
+    `- No inventes clases ni métodos que no estén en el código\n\n` +
+
+    `--- BOCETOS ITERACIÓN 1 ---\n${previousDiagrams}\n\n` +
     `--- CONTROLADORES ---\n${controllerSection}\n\n` +
-    `--- IMPLEMENTACIONES DE SERVICIOS ---\n${serviceSection}\n\n` +
-    `--- IMPLEMENTACIONES DE REPOSITORIOS/GATEWAYS/CLIENTES ---\n${repositorySection}`
+    `--- SERVICIOS ---\n${serviceSection}\n\n` +
+    `--- REPOSITORIOS / GATEWAYS / CLIENTES ---\n${repositorySection}`
   );
 
   return await callModel(model, msg, token);
@@ -264,19 +300,29 @@ function buildOutputFile(results: BatchResult[]): string {
     ``,
     `> Generado por \`@company /explain\` el ${now}`,
     `> Regenera en cualquier momento para reflejar cambios en el código.`,
+    `> Cada endpoint incluye: documentación + diagrama de secuencia detallado por capas.`,
     ``,
     `---`,
     ``,
   ];
 
   for (const result of results) {
+    // Prefer refined (iteration 2); fall back to raw (iteration 1)
     const content = result.refinedDiagrams || result.rawDiagrams;
-    if (content.trim()) {
-      parts.push(content.trim());
-      parts.push("");
-      parts.push("---");
-      parts.push("");
-    }
+    if (!content.trim()) { continue; }
+
+    // Normalize: ensure metadata fields (PARAMETROS, RESPUESTA, FLUJO) render
+    // as bold key-value pairs instead of bare text lines
+    const normalized = content
+      .replace(/^PARAMETROS:/gm,  "**Parámetros:**")
+      .replace(/^RESPUESTA:/gm,   "**Respuesta:**")
+      .replace(/^FLUJO:/gm,       "**Flujo:**")
+      .replace(/^DESCRIPCION:/gm, "**Descripción:**");
+
+    parts.push(normalized.trim());
+    parts.push("");
+    parts.push("---");
+    parts.push("");
   }
 
   return parts.join("\n");
