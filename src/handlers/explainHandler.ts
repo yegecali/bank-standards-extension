@@ -23,10 +23,9 @@ interface ServiceFile {
 }
 
 interface BatchResult {
-  batchIndex: number;
+  batchIndex:      number;
   controllerNames: string[];
-  rawDiagrams: string;   // iteration 1 output
-  refinedDiagrams: string; // iteration 2 output
+  finalDiagram:    string;   // diagram after all layers
 }
 
 // ─── Main handler ─────────────────────────────────────────────────────────────
@@ -97,64 +96,116 @@ export async function handleExplainCommand(
 
   log(`[ExplainHandler] ${controllers.length} controllers (${totalLines} lines), ${services.length} services, ${repositories.length} repos, ${infrastructure.length} infra, ${batches.length} batches`);
 
-  // ── Iteration 1: generate raw diagrams ─────────────────────────────────────
-  stream.markdown(`### Iteración 1 — Generando diagramas por lote…\n\n`);
+  // ── Per-batch layer-by-layer processing ────────────────────────────────────
   const batchResults: BatchResult[] = [];
 
   for (let i = 0; i < batches.length; i++) {
     if (token.isCancellationRequested) { break; }
+
     const batch      = batches[i];
     const names      = batch.map((c) => shortName(c.relPath));
     const batchLines = batch.reduce((s, c) => s + c.lineCount, 0);
     const batchKb    = Math.round(batch.reduce((s, c) => s + c.charCount, 0) / 1024 * 10) / 10;
 
-    stream.progress(`Iteración 1 — Lote ${i + 1}/${batches.length}: ${names.join(", ")} (${batchLines} líneas)…`);
+    stream.markdown(`\n---\n\n### 🗂 Lote ${i + 1}/${batches.length} — \`${names.join("`, `")}\`\n\n`);
 
-    const raw = await generateRawDiagrams(batch, openapiText, resolvedModel, token);
-    batchResults.push({ batchIndex: i, controllerNames: names, rawDiagrams: raw, refinedDiagrams: "" });
-
+    // ── Capa 1: Controladores ────────────────────────────────────────────────
     stream.markdown(
-      `- ✅ **Lote ${i + 1}/${batches.length}** — \`${names.join("`, `")}\`\n` +
-      `  📊 ${batch.length} archivo(s) · **${batchLines.toLocaleString()} líneas** · **${batchKb} KB** de contexto enviado al LLM\n`
+      `#### 🔵 Capa 1 — Controladores\n` +
+      `📄 **${batch.length}** archivo(s) · **${batchLines.toLocaleString()} líneas** · **${batchKb} KB**\n\n`
     );
-    log(`[ExplainHandler] Batch ${i + 1} iter1 done — ${batchLines} lines, ${raw.length} chars output`);
-  }
+    stream.progress(`Lote ${i + 1} — Capa 1: escaneando ${names.join(", ")}…`);
 
-  // ── Iteration 2: refine with service implementations ───────────────────────
-  stream.markdown(`\n### Iteración 2 — Refinando con implementaciones de servicios…\n\n`);
+    let diagram = await scanControllerLayer(batch, openapiText, resolvedModel, token);
 
-  for (let i = 0; i < batchResults.length; i++) {
-    if (token.isCancellationRequested) { break; }
-    const result = batchResults[i];
-    const batch  = batches[i];
+    stream.markdown(`✅ Diagrama inicial generado (${countEndpoints(diagram)} endpoint(s))\n\n`);
+    log(`[ExplainHandler] Batch ${i + 1} layer1 done — ${diagram.length} chars`);
 
-    stream.progress(`Iteración 2 — Lote ${i + 1}/${batchResults.length}: analizando dependencias…`);
-
-    // Find services referenced by this batch's controllers
+    // ── Capa 2: Servicios ────────────────────────────────────────────────────
     const relevantServices = findRelevantServices(batch, services);
-    // Find repositories/gateways/clients referenced by those services
+    if (relevantServices.length > 0 && !token.isCancellationRequested) {
+      const svcLines = relevantServices.reduce((s, f) => s + f.content.split("\n").length, 0);
+      const svcKb    = Math.round(relevantServices.reduce((s, f) => s + f.content.length, 0) / 1024 * 10) / 10;
+
+      stream.markdown(
+        `#### 🟡 Capa 2 — Servicios\n` +
+        `📄 **${relevantServices.length}** archivo(s) · **${svcLines.toLocaleString()} líneas** · **${svcKb} KB**\n` +
+        `📎 ${relevantServices.map((s) => `\`${s.name}\``).join(", ")}\n\n`
+      );
+      stream.progress(`Lote ${i + 1} — Capa 2: enriqueciendo con servicios…`);
+
+      diagram = await enrichWithLayer(diagram, "SERVICIOS", relevantServices,
+        `- Añade los nombres exactos de métodos del servicio en cada llamada\n` +
+        `- Muestra lógica de negocio: validaciones, cálculos, transformaciones\n` +
+        `- Si hay orquestación entre servicios, muéstrala con las llamadas exactas\n` +
+        `- Añade alt/else para validaciones de negocio y manejo de errores del servicio\n` +
+        `- Actualiza DESCRIPCION, PARAMETROS, RESPUESTA y FLUJO con lo que encontraste`,
+        resolvedModel, token);
+
+      stream.markdown(`✅ Diagrama actualizado con lógica de servicios\n\n`);
+      log(`[ExplainHandler] Batch ${i + 1} layer2 done — ${diagram.length} chars`);
+    } else if (relevantServices.length === 0) {
+      stream.markdown(`#### 🟡 Capa 2 — Servicios\n⚠️ No se encontraron servicios referenciados por estos controladores\n\n`);
+    }
+
+    // ── Capa 3: Repositorios / Gateways ──────────────────────────────────────
     const relevantRepositories = findRelevantRepositories(relevantServices, repositories);
-    // Find infrastructure (Redis, events, async, REST clients) referenced anywhere in the chain
+    if (relevantRepositories.length > 0 && !token.isCancellationRequested) {
+      const repoLines = relevantRepositories.reduce((s, f) => s + f.content.split("\n").length, 0);
+      const repoKb    = Math.round(relevantRepositories.reduce((s, f) => s + f.content.length, 0) / 1024 * 10) / 10;
+
+      stream.markdown(
+        `#### 🟠 Capa 3 — Repositorios / Gateways / DAOs\n` +
+        `📄 **${relevantRepositories.length}** archivo(s) · **${repoLines.toLocaleString()} líneas** · **${repoKb} KB**\n` +
+        `📎 ${relevantRepositories.map((r) => `\`${r.name}\``).join(", ")}\n\n`
+      );
+      stream.progress(`Lote ${i + 1} — Capa 3: enriqueciendo con repositorios…`);
+
+      diagram = await enrichWithLayer(diagram, "REPOSITORIOS / GATEWAYS / DAOs", relevantRepositories,
+        `- Añade las llamadas exactas al repositorio (findById, save, findAll, deleteById, etc.)\n` +
+        `- Si hay queries personalizadas (@Query, JPQL, SQL nativo), mencionarlas como nota\n` +
+        `- Muestra llamadas a APIs externas via gateway con el endpoint/método HTTP exacto\n` +
+        `- Añade el participante DB, ExternalAPI o ambos si corresponde\n` +
+        `- Muestra manejo de Optional, excepciones de BD (EntityNotFoundException, etc.)`,
+        resolvedModel, token);
+
+      stream.markdown(`✅ Diagrama actualizado con acceso a datos\n\n`);
+      log(`[ExplainHandler] Batch ${i + 1} layer3 done — ${diagram.length} chars`);
+    } else if (relevantRepositories.length === 0) {
+      stream.markdown(`#### 🟠 Capa 3 — Repositorios\n⚠️ No se encontraron repositorios referenciados\n\n`);
+    }
+
+    // ── Capa 4: Infraestructura (Redis / Eventos / Async) ────────────────────
     const relevantInfrastructure = findRelevantInfrastructure(relevantServices, relevantRepositories, infrastructure);
+    if (relevantInfrastructure.length > 0 && !token.isCancellationRequested) {
+      const infraLines = relevantInfrastructure.reduce((s, f) => s + f.content.split("\n").length, 0);
+      const infraKb    = Math.round(relevantInfrastructure.reduce((s, f) => s + f.content.length, 0) / 1024 * 10) / 10;
 
-    const ctxLines =
-      relevantServices.reduce((s, f) => s + f.content.split("\n").length, 0) +
-      relevantRepositories.reduce((s, f) => s + f.content.split("\n").length, 0) +
-      relevantInfrastructure.reduce((s, f) => s + f.content.split("\n").length, 0);
-    const ctxKb = Math.round(
-      ([...relevantServices, ...relevantRepositories, ...relevantInfrastructure]
-        .reduce((s, f) => s + f.content.length, 0)) / 1024 * 10
-    ) / 10;
+      stream.markdown(
+        `#### 🔴 Capa 4 — Infraestructura (Redis / Eventos / Async)\n` +
+        `📄 **${relevantInfrastructure.length}** archivo(s) · **${infraLines.toLocaleString()} líneas** · **${infraKb} KB**\n` +
+        `📎 ${relevantInfrastructure.map((f) => `\`${f.name}\``).join(", ")}\n\n`
+      );
+      stream.progress(`Lote ${i + 1} — Capa 4: enriqueciendo con infraestructura…`);
 
-    const refined = await refineDiagrams(batch, relevantServices, relevantRepositories, relevantInfrastructure, result.rawDiagrams, resolvedModel, token);
-    result.refinedDiagrams = refined;
+      diagram = await enrichWithLayer(diagram, "INFRAESTRUCTURA (Redis, Eventos, Async, Clientes REST)", relevantInfrastructure,
+        `- Redis/Cache: añade alt { cache hit → retornar } else { miss → consultar DB → set cache }\n` +
+        `  Usa participant Redis. Muestra el método exacto (get, set, delete, expire)\n` +
+        `- Eventos/Kafka/RabbitMQ: usa ->-) para publish fire-and-forget. Añade participant Kafka/EventBus\n` +
+        `  Muestra el nombre del evento y el topic/exchange\n` +
+        `- @Async / CompletableFuture: marca la llamada con Note right of X: @Async\n` +
+        `- Clientes REST externos: añade participant ExternalAPI. Muestra el método HTTP y la URL\n` +
+        `- @Transactional: añade Note over Service,DB: @Transactional al inicio del flujo\n` +
+        `- Si hay listeners/consumers (@KafkaListener, @EventListener): muéstralos como participantes separados`,
+        resolvedModel, token);
 
-    stream.markdown(
-      `- ✅ **Lote ${i + 1}/${batchResults.length}** refinado — ` +
-      `${relevantServices.length} svc · ${relevantRepositories.length} repo · ${relevantInfrastructure.length} infra\n` +
-      `  📊 Contexto adicional: **${ctxLines.toLocaleString()} líneas** · **${ctxKb} KB**\n`
-    );
-    log(`[ExplainHandler] Batch ${i + 1} iter2 done — ctx ${ctxLines} lines, output ${refined.length} chars`);
+      stream.markdown(`✅ Diagrama final con infraestructura completa\n\n`);
+      log(`[ExplainHandler] Batch ${i + 1} layer4 done — ${diagram.length} chars`);
+    } else {
+      stream.markdown(`#### 🔴 Capa 4 — Infraestructura\n⚠️ No se detectó infraestructura dedicada (Redis/Eventos/Async) para este lote\n\n`);
+    }
+
+    batchResults.push({ batchIndex: i, controllerNames: names, finalDiagram: diagram });
   }
 
   // ── Write output file ──────────────────────────────────────────────────────
@@ -189,9 +240,9 @@ export async function handleExplainCommand(
   }
 }
 
-// ─── Iteration 1: generate raw diagrams ──────────────────────────────────────
+// ─── Capa 1: Controladores — diagrama inicial ─────────────────────────────────
 
-async function generateRawDiagrams(
+async function scanControllerLayer(
   batch: ControllerFile[],
   openapiText: string,
   model: vscode.LanguageModelChat,
@@ -209,47 +260,41 @@ async function generateRawDiagrams(
     `Eres un arquitecto de software senior. Analiza los siguientes controladores` +
     (openapiText ? " y su contrato OpenAPI" : "") + `.\n\n` +
 
-    `Para CADA endpoint que encuentres realiza DOS cosas:\n\n` +
+    `Para CADA endpoint genera DOS cosas:\n\n` +
 
-    `**PARTE A — Documentación del endpoint:**\n` +
-    `Describe con precisión qué hace el endpoint, sus parámetros, respuesta y flujo en prosa.\n\n` +
+    `**A — Documentación inicial:**\n` +
+    `DESCRIPCION, PARAMETROS (nombre, tipo), RESPUESTA (qué retorna en éxito), FLUJO (2-3 líneas en prosa)\n\n` +
 
-    `**PARTE B — Diagrama de secuencia boceto (capa por capa):**\n` +
-    `Genera un diagrama Mermaid que muestre las capas en orden estricto:\n` +
-    `  Client → Controller → Service → Repository/Gateway → DB\n` +
-    `  Si el código usa Redis (@Cacheable, RedisTemplate): añade participant Redis\n` +
-    `  Si el código publica eventos (KafkaTemplate, ApplicationEventPublisher): añade participant Kafka/EventBus\n` +
-    `  Si el código llama a APIs externas (Feign, RestTemplate, WebClient): añade participant ExternalAPI\n` +
-    `  Si hay métodos @Async o CompletableFuture: usa ->-) y nota "async"\n` +
-    `Usa los nombres reales de clases y métodos que veas en el código.\n` +
-    `En este boceto incluye el flujo principal (happy path) y un alt para el error más obvio.\n\n` +
+    `**B — Diagrama de secuencia Capa 1 (solo controladores):**\n` +
+    `Muestra el flujo desde el cliente hasta donde el controller delega. Incluye:\n` +
+    `- La llamada HTTP entrante con sus parámetros\n` +
+    `- Las llamadas que el controller hace (método del servicio, si se ve en el código)\n` +
+    `- Un alt para el error más obvio (validación, 404, etc.)\n` +
+    `- Si hay filter/interceptor visible, inclúyelo\n\n` +
 
-    `FORMATO DE SALIDA OBLIGATORIO — usa exactamente estos marcadores:\n\n` +
+    `FORMATO OBLIGATORIO:\n\n` +
     `## CONTROLLER: NombreExactoDelControlador\n\n` +
     `### ENDPOINT: METHOD /ruta/exacta\n` +
-    `DESCRIPCION: qué hace este endpoint en una línea\n` +
-    `PARAMETROS: param1 (tipo) — descripción, param2 (tipo) — descripción\n` +
-    `RESPUESTA: qué retorna en éxito y en error\n` +
-    `FLUJO: descripción en prosa del flujo de ejecución en 2-3 líneas\n\n` +
+    `DESCRIPCION: descripción en una línea\n` +
+    `PARAMETROS: param (tipo), param2 (tipo)\n` +
+    `RESPUESTA: qué retorna\n` +
+    `FLUJO: descripción en prosa\n\n` +
     "```mermaid\n" +
     `sequenceDiagram\n` +
     `  participant Client\n` +
     `  participant Controller as NombreController\n` +
     `  participant Service as NombreService\n` +
-    `  participant Repository as NombreRepo\n` +
-    `  participant DB\n` +
-    `  Client->>Controller: METHOD /ruta (params)\n` +
-    `  Controller->>Service: metodoExacto(args)\n` +
+    `  Client->>Controller: METHOD /ruta\n` +
+    `  Controller->>Service: metodo(args)\n` +
     `  ...\n` +
     "```\n\n" +
 
-    `REGLAS MERMAID OBLIGATORIAS:\n` +
-    `- Usa \`->>\` para llamadas síncronas (NO ->>>)\n` +
-    `- Usa \`-->>\` para respuestas (NO -->>>)\n` +
-    `- Usa \`alt\`/\`else\`/\`end\` para condicionales\n` +
-    `- Usa \`opt\` para flujos opcionales\n` +
-    `- Los nombres de participant deben coincidir exactamente con los alias declarados\n` +
-    `- No inventes clases ni métodos que no estén en el código\n\n` +
+    `REGLAS MERMAID:\n` +
+    `- \`->>\` llamadas síncronas | \`-->>\` respuestas | \`->)\` async fire-and-forget\n` +
+    `- \`alt\`/\`else\`/\`end\` condicionales | \`opt\` flujos opcionales\n` +
+    `- \`Note over X,Y: texto\` para anotaciones importantes\n` +
+    `- Alias de participant deben coincidir exactamente con las flechas\n` +
+    `- No inventes clases ni métodos\n\n` +
 
     `${controllerSection}\n\n${openapiSection}`
   );
@@ -257,108 +302,56 @@ async function generateRawDiagrams(
   return await callModel(model, msg, token);
 }
 
-// ─── Iteration 2: refine with service implementations ────────────────────────
+// ─── Capas 2-4: enriquecer el diagrama con una capa nueva ─────────────────────
 
-async function refineDiagrams(
-  batch: ControllerFile[],
-  relevantServices: ServiceFile[],
-  relevantRepositories: ServiceFile[],
-  relevantInfrastructure: ServiceFile[],
-  previousDiagrams: string,
+async function enrichWithLayer(
+  currentDiagram: string,
+  layerName: string,
+  layerFiles: ServiceFile[],
+  layerInstructions: string,
   model: vscode.LanguageModelChat,
   token: vscode.CancellationToken
 ): Promise<string> {
-  const controllerSection = batch
-    .map((c) => `### ${shortName(c.relPath)}\n\`\`\`\n${c.content}\n\`\`\``)
+  const filesSection = layerFiles
+    .map((f) => `### ${f.name}\n\`\`\`\n${f.content}\n\`\`\``)
     .join("\n\n");
 
-  const serviceSection = relevantServices.length > 0
-    ? relevantServices
-        .map((s) => `### ${s.name}\n\`\`\`\n${s.content}\n\`\`\``)
-        .join("\n\n")
-    : "_No se encontraron implementaciones de servicios._";
-
-  const repositorySection = relevantRepositories.length > 0
-    ? relevantRepositories
-        .map((r) => `### ${r.name}\n\`\`\`\n${r.content}\n\`\`\``)
-        .join("\n\n")
-    : "_No se encontraron implementaciones de repositorios/gateways._";
-
-  const infrastructureSection = relevantInfrastructure.length > 0
-    ? relevantInfrastructure
-        .map((i) => `### ${i.name}\n\`\`\`\n${i.content}\n\`\`\``)
-        .join("\n\n")
-    : "_No se encontraron archivos de infraestructura dedicados. Detecta Redis/eventos/async por anotaciones en el código._";
-
   const msg = vscode.LanguageModelChatMessage.User(
-    `Eres un arquitecto de software senior. Tienes el boceto (iteración 1) con documentación y diagramas iniciales,\n` +
-    `y ahora también las implementaciones reales de servicios, repositorios, gateways y clientes.\n\n` +
+    `Eres un arquitecto de software senior.\n\n` +
+    `Tienes el diagrama de secuencia ACTUAL (generado en la capa anterior) y ahora tienes las implementaciones\n` +
+    `de la capa: **${layerName}**.\n\n` +
 
-    `Tu tarea es producir la versión DEFINITIVA de cada endpoint. Para cada uno debes MEJORAR DOS COSAS:\n\n` +
+    `Tu tarea es ACTUALIZAR el diagrama incorporando el código de esta nueva capa. Debes:\n` +
+    `${layerInstructions}\n\n` +
 
-    `**A — Mejora la documentación del endpoint:**\n` +
-    `- Actualiza DESCRIPCION con más precisión técnica\n` +
-    `- Completa PARAMETROS con tipos exactos, validaciones (@NotNull, @Valid, @Size, etc.) y valores por defecto\n` +
-    `- Enriquece RESPUESTA con los códigos HTTP reales (200, 201, 400, 404, 409, 500) y qué retorna cada uno\n` +
-    `- Mejora FLUJO con los pasos reales del código (incluye cache, transacciones, eventos, async)\n\n` +
-
-    `**B — Mejora el diagrama de secuencia:**\n` +
-    `1. **Contrasta el boceto con el código real** — identifica qué falta, qué está mal nombrado o qué capas no aparecen.\n` +
-    `2. **Expande capa por capa** en orden estricto:\n` +
-    `   Client → Controller → (Filter/Interceptor si existe) → Service → (orquestación entre Services)\n` +
-    `   → Repository/Gateway/DAO → DB\n` +
-    `   → REST Client externo (Feign/@FeignClient, RestTemplate, WebClient, axios, fetch) → API Externa\n` +
-    `   → Event Producer → Cola/Bus (Kafka, RabbitMQ, SQS, Spring Events)\n` +
-    `   → Cache (RedisTemplate, @Cacheable, StringRedisTemplate, Jedis, Lettuce)\n` +
-    `3. **Incluye interacciones con beans y configuración**:\n` +
-    `   - Beans inyectados: nombre exacto de clase (Mapper, Validator, Converter, Builder)\n` +
-    `   - Cache: alt { hit → retornar del cache } else { miss → consultar DB → guardar en cache }\n` +
-    `   - Transacciones (@Transactional, @Transactional(readOnly)): Note over Service: @Transactional\n` +
-    `   - Configuración relevante (@Value, @ConfigurationProperties) si afecta el flujo\n` +
-    `4. **Llamadas asíncronas y eventos** — usa flechas especiales:\n` +
-    `   - Llamada async (@Async, CompletableFuture, Mono/Flux): usa \`-->>\` con Note "async"\n` +
-    `   - Fire-and-forget (publish evento, send Kafka sin esperar respuesta): usa \`->)\` \n` +
-    `   - Consumidor de evento (@KafkaListener, @RabbitListener, @EventListener): nuevo participante\n` +
-    `   - Si hay reactive (Mono/Flux): muestra el subscribe y el onNext/onError\n` +
-    `5. **Flujos condicionales y excepciones**:\n` +
-    `   - alt éxito / else error para validaciones y casos de negocio\n` +
-    `   - Manejo de excepciones: qué lanza el servicio, cómo lo captura el controller\n` +
-    `   - opt para flujos opcionales (auditoría, notificaciones, eventos secundarios)\n` +
-    `6. **Usa los nombres exactos** de clases y métodos del código (no nombres genéricos).\n\n` +
+    `IMPORTANTE:\n` +
+    `- El diagrama resultante REEMPLAZA al anterior — debe ser completo, no solo el delta\n` +
+    `- Mantén todo lo que ya estaba correcto y añade/corrige con lo que encuentres en el código\n` +
+    `- Actualiza también DESCRIPCION, PARAMETROS, RESPUESTA y FLUJO si encontraste más detalle\n` +
+    `- Si no encuentras nada relevante en esta capa para un endpoint, devuelve ese endpoint sin cambios\n\n` +
 
     `MISMO FORMATO DE SALIDA OBLIGATORIO:\n\n` +
     `## CONTROLLER: NombreExactoDelControlador\n\n` +
     `### ENDPOINT: METHOD /ruta/exacta\n` +
-    `DESCRIPCION: qué hace este endpoint en una línea\n` +
-    `PARAMETROS: igual que iteración 1 (actualiza si encontraste más detalle)\n` +
-    `RESPUESTA: igual que iteración 1\n` +
-    `FLUJO: descripción en prosa actualizada con los detalles encontrados en el código\n\n` +
+    `DESCRIPCION: ...\n` +
+    `PARAMETROS: ...\n` +
+    `RESPUESTA: ...\n` +
+    `FLUJO: ...\n\n` +
     "```mermaid\n" +
     `sequenceDiagram\n` +
-    `  participant Client\n` +
-    `  participant Controller as NombreController\n` +
-    `  participant Service as NombreService\n` +
-    `  participant Repository as NombreRepo\n` +
-    `  participant DB\n` +
     `  ...\n` +
     "```\n\n" +
 
-    `REGLAS MERMAID OBLIGATORIAS:\n` +
-    `- \`->>\`  llamada síncrona (NO ->>>)\n` +
-    `- \`-->>\` respuesta síncrona (NO -->>>)\n` +
-    `- \`->)\`  mensaje async fire-and-forget (publicar evento, enviar a Kafka sin esperar)\n` +
-    `- \`alt\`/\`else\`/\`end\`  condicionales\n` +
-    `- \`opt\`  flujos opcionales\n` +
-    `- \`Note over X,Y: texto\`  para @Transactional, async, retry, etc.\n` +
-    `- Los alias de participant deben coincidir EXACTAMENTE con los usados en las flechas\n` +
-    `- Agrega participantes para cada capa descubierta: Redis, Kafka, ExternalAPI, EventBus, etc.\n` +
+    `REGLAS MERMAID:\n` +
+    `- \`->>\` llamadas síncronas | \`-->>\` respuestas | \`->)\` async fire-and-forget\n` +
+    `- \`alt\`/\`else\`/\`end\` condicionales | \`opt\` flujos opcionales\n` +
+    `- \`Note over X,Y: texto\` para @Transactional, async, retry, etc.\n` +
+    `- Agrega participant para cada nueva capa descubierta (Redis, Kafka, DB, ExternalAPI, etc.)\n` +
+    `- Alias de participant deben coincidir EXACTAMENTE con las flechas\n` +
     `- No inventes clases ni métodos que no estén en el código\n\n` +
 
-    `--- BOCETOS ITERACIÓN 1 ---\n${previousDiagrams}\n\n` +
-    `--- CONTROLADORES ---\n${controllerSection}\n\n` +
-    `--- SERVICIOS ---\n${serviceSection}\n\n` +
-    `--- REPOSITORIOS / GATEWAYS / CLIENTES REST ---\n${repositorySection}\n\n` +
-    `--- INFRAESTRUCTURA (Redis, Eventos, Async, Producers, Consumers, Listeners) ---\n${infrastructureSection}`
+    `--- DIAGRAMA ACTUAL (capa anterior) ---\n${currentDiagram}\n\n` +
+    `--- IMPLEMENTACIONES DE ${layerName} ---\n${filesSection}`
   );
 
   return await callModel(model, msg, token);
@@ -380,8 +373,7 @@ function buildOutputFile(results: BatchResult[]): string {
   ];
 
   for (const result of results) {
-    // Prefer refined (iteration 2); fall back to raw (iteration 1)
-    const content = result.refinedDiagrams || result.rawDiagrams;
+    const content = result.finalDiagram;
     if (!content.trim()) { continue; }
 
     // Normalize: ensure metadata fields (PARAMETROS, RESPUESTA, FLUJO) render
@@ -399,6 +391,10 @@ function buildOutputFile(results: BatchResult[]): string {
   }
 
   return parts.join("\n");
+}
+
+function countEndpoints(markdown: string): number {
+  return (markdown.match(/^### ENDPOINT:/gm) ?? []).length;
 }
 
 function extractToc(markdown: string): string {
