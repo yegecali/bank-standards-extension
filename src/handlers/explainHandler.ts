@@ -180,11 +180,15 @@ export async function handleExplainCommand(
     if (relevantInfrastructure.length > 0 && !token.isCancellationRequested) {
       const infraLines = relevantInfrastructure.reduce((s, f) => s + f.content.split("\n").length, 0);
       const infraKb    = Math.round(relevantInfrastructure.reduce((s, f) => s + f.content.length, 0) / 1024 * 10) / 10;
+      const dedicated  = relevantInfrastructure.filter((f) => !f.name.includes("[inline:"));
+      const inline     = relevantInfrastructure.filter((f) => f.name.includes("[inline:"));
 
       stream.markdown(
         `#### 🔴 Capa 4 — Infraestructura (Redis / Eventos / Async)\n` +
-        `📄 **${relevantInfrastructure.length}** archivo(s) · **${infraLines.toLocaleString()} líneas** · **${infraKb} KB**\n` +
-        `📎 ${relevantInfrastructure.map((f) => `\`${f.name}\``).join(", ")}\n\n`
+        `📄 **${relevantInfrastructure.length}** fuente(s) · **${infraLines.toLocaleString()} líneas** · **${infraKb} KB**\n` +
+        (dedicated.length > 0 ? `📎 Archivos dedicados: ${dedicated.map((f) => `\`${shortName(f.relPath)}\``).join(", ")}\n` : "") +
+        (inline.length > 0   ? `🔍 Uso inline detectado en: ${inline.map((f) => `\`${shortName(f.relPath)}\``).join(", ")}\n` : "") +
+        `\n`
       );
       stream.progress(`Lote ${i + 1} — Capa 4: enriqueciendo con infraestructura…`);
 
@@ -474,12 +478,15 @@ async function findServices(): Promise<ServiceFile[]> {
 
 async function findInfrastructure(): Promise<ServiceFile[]> {
   const patterns = [
-    // REST clients (Feign, RestTemplate wrappers, WebClient wrappers)
+    // REST clients (Feign, WebClient, RestTemplate wrappers)
     "**/*RestClient.*",
     "**/*FeignClient.*",
     "**/*WebClient.*",
     "**/*HttpClient.*",
     "**/*ApiClient.*",
+    "**/*HttpAdapter.*",
+    "**/*RestAdapter.*",
+    "**/*ExternalClient.*",
     // Event producers / consumers / listeners
     "**/*Producer.*",
     "**/*Consumer.*",
@@ -489,15 +496,28 @@ async function findInfrastructure(): Promise<ServiceFile[]> {
     "**/*EventBus.*",
     "**/*MessageSender.*",
     "**/*MessageHandler.*",
+    "**/*Sender.*",
+    "**/*Emitter.*",
+    "**/*Dispatcher.*",
     // Redis / Cache
     "**/*Redis*.*",
     "**/*CacheManager.*",
     "**/*CacheService.*",
     "**/*CacheHelper.*",
-    // Async services
+    "**/*CacheAdapter.*",
+    // Kafka/Rabbit/SQS/SNS wrappers
+    "**/*Template.*",
+    "**/*Queue.*",
+    "**/*Topic.*",
+    "**/*Worker.*",
+    // Async / Scheduled
     "**/*AsyncService.*",
     "**/*AsyncHandler.*",
     "**/*AsyncTask.*",
+    "**/*Scheduler.*",
+    "**/*ScheduledTask.*",
+    "**/*Job.*",
+    "**/*Task.*",
   ];
 
   const uris = await findFilesByPatterns(patterns);
@@ -522,11 +542,19 @@ async function findRepositories(): Promise<ServiceFile[]> {
     "**/*Repository.*",
     "**/*RepositoryImpl.*",
     "**/*Repo.*",
+    "**/*RepoImpl.*",
     "**/*Gateway.*",
     "**/*GatewayImpl.*",
-    "**/*Client.*",
+    "**/*Client.*",       // UserServiceClient, OrderClient, etc.
     "**/*Adapter.*",
+    "**/*AdapterImpl.*",
     "**/*Dao.*",
+    "**/*DaoImpl.*",
+    "**/*Mapper.*",       // MyBatis / MapStruct mappers with DB operations
+    "**/*Port.*",         // Hexagonal architecture output ports
+    "**/*Persistence.*",  // PersistenceAdapter, UserPersistence
+    "**/*Store.*",        // UserStore, TokenStore
+    "**/*DataSource.*",   // Custom datasource wrappers
   ];
 
   const uris = await findFilesByPatterns(patterns);
@@ -588,14 +616,91 @@ async function findFilesByPatterns(patterns: string[], limitPerPattern = 200): P
 
 // ─── Match services referenced in controller batch ───────────────────────────
 
+/**
+ * Strips common implementation/pattern suffixes so that "UserRepositoryImpl"
+ * matches a service that injects "UserRepository", and "KafkaProducerAdapter"
+ * matches a service that references "KafkaProducer".
+ */
+function stripImplSuffix(name: string): string {
+  return name
+    .replace(/(impl|default|base|abstract)$/, "")
+    .replace(/(jpa|mongo|elastic|jdbc|hibernate|redis|memory|inmemory|inmemória)$/, "")
+    .replace(/(adapter|dao|helper|wrapper|decorator|proxy|facade|delegate)$/, "");
+}
+
+/** Returns true if candidateName appears in combinedContent (full or stripped form). */
+function isReferenced(candidateName: string, combinedContent: string): boolean {
+  if (combinedContent.includes(candidateName)) { return true; }
+  const stripped = stripImplSuffix(candidateName);
+  return stripped.length >= 4 && stripped !== candidateName && combinedContent.includes(stripped);
+}
+
+// Infrastructure keywords that indicate direct (inline) usage in service/repo code
+// without a dedicated wrapper class file.
+const INLINE_INFRA_KEYWORDS: Array<{ keyword: string; label: string }> = [
+  { keyword: "kafkatemplate",             label: "Kafka" },
+  { keyword: "rabbittemplate",            label: "RabbitMQ" },
+  { keyword: "@kafkalistener",            label: "Kafka" },
+  { keyword: "redistemplate",             label: "Redis" },
+  { keyword: "stringredistemplate",       label: "Redis" },
+  { keyword: "reactiveredistemplate",     label: "Redis" },
+  { keyword: "resttemplate",              label: "RestTemplate" },
+  { keyword: "webclient.",                label: "WebClient" },
+  { keyword: "sqsclient",                 label: "SQS" },
+  { keyword: "snsclient",                 label: "SNS" },
+  { keyword: "s3client",                  label: "S3" },
+  { keyword: "applicationeventpublisher", label: "SpringEvents" },
+  { keyword: "@eventlistener",            label: "SpringEvents" },
+  { keyword: "@async",                    label: "Async" },
+  { keyword: "completablefuture",         label: "Async" },
+  { keyword: "executorservice",           label: "Async" },
+  { keyword: "@scheduled",                label: "Scheduler" },
+  { keyword: "messagingtemplate",         label: "Messaging" },
+  { keyword: "streambridge",              label: "SpringCloud" },
+];
+
+/**
+ * For services/repos that directly use infrastructure primitives (KafkaTemplate,
+ * RedisTemplate, etc.) without a dedicated wrapper class, synthesizes a hint
+ * ServiceFile containing only the relevant lines. This ensures layer 4 still
+ * runs even when there are no dedicated infra files.
+ */
+function extractInlineInfraHints(files: ServiceFile[]): ServiceFile[] {
+  const hints: ServiceFile[] = [];
+
+  for (const file of files) {
+    const lower = file.content.toLowerCase();
+    const matched = INLINE_INFRA_KEYWORDS.filter(({ keyword }) => lower.includes(keyword));
+    if (matched.length === 0) { continue; }
+
+    const labels = [...new Set(matched.map(({ label }) => label))];
+    const relevantLines = file.content
+      .split("\n")
+      .filter((line) => matched.some(({ keyword }) => line.toLowerCase().includes(keyword)))
+      .slice(0, 50)
+      .join("\n");
+
+    if (!relevantLines.trim()) { continue; }
+
+    hints.push({
+      uri:     file.uri,
+      relPath: file.relPath,
+      name:    `${file.name}[inline:${labels.join("+")}]`,
+      content: `// Uso inline de infraestructura en: ${file.relPath}\n// Tecnologías detectadas: ${labels.join(", ")}\n\n${relevantLines}`,
+    });
+  }
+
+  return hints;
+}
+
 function findRelevantServices(batch: ControllerFile[], services: ServiceFile[]): ServiceFile[] {
   const combined = batch.map((c) => c.content).join("\n").toLowerCase();
-  return services.filter((s) => combined.includes(s.name));
+  return services.filter((s) => isReferenced(s.name, combined));
 }
 
 function findRelevantRepositories(services: ServiceFile[], repositories: ServiceFile[]): ServiceFile[] {
   const combined = services.map((s) => s.content).join("\n").toLowerCase();
-  return repositories.filter((r) => combined.includes(r.name));
+  return repositories.filter((r) => isReferenced(r.name, combined));
 }
 
 function findRelevantInfrastructure(
@@ -604,7 +709,16 @@ function findRelevantInfrastructure(
   infrastructure: ServiceFile[]
 ): ServiceFile[] {
   const combined = [...services, ...repositories].map((f) => f.content).join("\n").toLowerCase();
-  return infrastructure.filter((i) => combined.includes(i.name));
+  const fromFiles = infrastructure.filter((i) => isReferenced(i.name, combined));
+
+  // Also collect inline usage hints from services/repos that use infra primitives directly
+  const inlineHints = extractInlineInfraHints([...services, ...repositories]);
+
+  // Merge: avoid duplicating hints for files already covered by a dedicated infra file
+  const coveredPaths = new Set(fromFiles.map((f) => f.uri.path));
+  const newHints = inlineHints.filter((h) => !coveredPaths.has(h.uri.path));
+
+  return [...fromFiles, ...newHints];
 }
 
 // ─── LLM call helper ─────────────────────────────────────────────────────────
