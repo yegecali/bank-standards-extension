@@ -93,7 +93,7 @@ export async function handleExplainCommand(
     `| Lote | Controladores | Archivos | Líneas | Contexto |\n` +
     `|------|---------------|----------|--------|----------|\n` +
     `${batchTableRows}\n\n` +
-    `Se procesará en **2 iteraciones**: boceto inicial → diagrama detallado enriquecido.\n\n`
+    `Se procesará en **5 capas** por lote + **iteración de validación global** al final.\n\n`
   );
 
   log(`[ExplainHandler] ${controllers.length} controllers (${totalLines} lines), ${services.length} services, ${repositories.length} repos, ${infrastructure.length} infra, ${batches.length} batches`);
@@ -256,9 +256,14 @@ export async function handleExplainCommand(
     batchResults.push({ batchIndex: i, controllerNames: names, finalDiagram: diagram });
   }
 
+  // ── Iteración Final: Validación Global ─────────────────────────────────────
+  const validatedResults = await runGlobalValidation(
+    allSourceFiles, batchResults, stream, resolvedModel, token
+  );
+
   // ── Write output file ──────────────────────────────────────────────────────
   stream.progress("Escribiendo archivo de documentación…");
-  const fileContent = buildOutputFile(batchResults);
+  const fileContent = buildOutputFile(validatedResults);
 
   try {
     const root    = folders[0].uri;
@@ -400,6 +405,185 @@ async function enrichWithLayer(
 
     `--- DIAGRAMA ACTUAL (capa anterior) ---\n${currentDiagram}\n\n` +
     `--- IMPLEMENTACIONES DE ${layerName} ---\n${filesSection}`
+  );
+
+  return await callModel(model, msg, token);
+}
+
+// ─── Iteración Final: Validación Global ──────────────────────────────────────
+
+/**
+ * Re-scans ALL source files in batches of FILES_PER_BATCH.
+ * For each sub-batch, compares the code against the generated documentation
+ * and adds/corrects content if something is missing or wrong.
+ * Capped at MAX_VALIDATION_CHUNKS sub-batches to avoid excessive LLM calls.
+ */
+const MAX_VALIDATION_CHUNKS = 20;
+
+async function runGlobalValidation(
+  allSourceFiles: ServiceFile[],
+  batchResults: BatchResult[],
+  stream: vscode.ChatResponseStream,
+  model: vscode.LanguageModelChat,
+  token: vscode.CancellationToken
+): Promise<BatchResult[]> {
+  if (token.isCancellationRequested || batchResults.length === 0) { return batchResults; }
+
+  stream.markdown(`\n---\n\n## 🔁 Iteración Final — Validación Global\n\n`);
+
+  const totalFiles = allSourceFiles.length;
+  const chunks     = chunk(allSourceFiles, BATCH.FILES_PER_BATCH);
+  const toProcess  = chunks.slice(0, MAX_VALIDATION_CHUNKS);
+  const totalLines = allSourceFiles.reduce((s, f) => s + f.content.split("\n").length, 0);
+  const totalKb    = Math.round(allSourceFiles.reduce((s, f) => s + f.content.length, 0) / 1024);
+
+  stream.markdown(
+    `Revisando **${totalFiles}** archivos fuente (${totalLines.toLocaleString()} líneas · ${totalKb} KB) ` +
+    `en **${toProcess.length}** sub-lotes contra la documentación generada.\n\n` +
+    `| Sub-lote | Archivos | Líneas | Contexto |\n` +
+    `|----------|----------|--------|----------|\n` +
+    toProcess.map((ch, ci) => {
+      const lines = ch.reduce((s, f) => s + f.content.split("\n").length, 0);
+      const kb    = Math.round(ch.reduce((s, f) => s + f.content.length, 0) / 1024 * 10) / 10;
+      return `| ${ci + 1} | ${ch.map((f) => shortName(f.relPath)).join(", ")} | ${lines} | ${kb} KB |`;
+    }).join("\n") +
+    `\n\n`
+  );
+
+  const results = batchResults.map((r) => ({ ...r }));
+
+  for (let ci = 0; ci < toProcess.length; ci++) {
+    if (token.isCancellationRequested) { break; }
+
+    const fileChunk  = toProcess[ci];
+    const chunkLines = fileChunk.reduce((s, f) => s + f.content.split("\n").length, 0);
+    const chunkKb    = Math.round(fileChunk.reduce((s, f) => s + f.content.length, 0) / 1024 * 10) / 10;
+    const names      = fileChunk.map((f) => shortName(f.relPath));
+
+    stream.markdown(
+      `#### 🔎 Sub-lote ${ci + 1}/${toProcess.length}\n` +
+      `📄 **${fileChunk.length}** archivo(s) · **${chunkLines.toLocaleString()} líneas** · **${chunkKb} KB**\n` +
+      `📎 ${names.map((n) => `\`${n}\``).join(", ")}\n\n`
+    );
+    stream.progress(`Validación global ${ci + 1}/${toProcess.length}: ${names.join(", ")}…`);
+
+    const targetIdx = findMostRelevantBatch(fileChunk, results);
+    const target    = results[targetIdx];
+
+    const docSection = extractRelevantSections(target.finalDiagram, fileChunk);
+    const updated    = await validateAndComplete(docSection, fileChunk, model, token);
+
+    // Merge: replace the extracted section with the updated one inside the full diagram
+    target.finalDiagram = mergeSection(target.finalDiagram, docSection, updated);
+
+    stream.markdown(`✅ Sub-lote ${ci + 1} validado\n\n`);
+    log(`[ExplainHandler] Global validation chunk ${ci + 1}/${toProcess.length} done`);
+  }
+
+  return results;
+}
+
+/**
+ * Picks the batch result whose diagram is most referenced by the given files.
+ * Falls back to the first result if no match.
+ */
+function findMostRelevantBatch(files: ServiceFile[], results: BatchResult[]): number {
+  let bestIdx = 0;
+  let bestScore = -1;
+  for (let i = 0; i < results.length; i++) {
+    const docsLower = results[i].finalDiagram.toLowerCase();
+    let score = 0;
+    for (const f of files) {
+      if (docsLower.includes(f.name)) { score += 2; continue; }
+      const stripped = stripImplSuffix(f.name);
+      if (stripped.length >= 4 && docsLower.includes(stripped)) { score += 1; }
+    }
+    // Also score if files reference any controller name from this batch
+    const fileCombined = files.map((f) => f.content).join("\n").toLowerCase();
+    for (const ctrlName of results[i].controllerNames) {
+      if (fileCombined.includes(ctrlName.toLowerCase())) { score += 3; }
+    }
+    if (score > bestScore) { bestScore = score; bestIdx = i; }
+  }
+  return bestIdx;
+}
+
+/**
+ * Extracts only the ## CONTROLLER sections from the diagram that are likely
+ * referenced by the given files, to avoid passing the entire large diagram.
+ * If nothing matches, returns the full diagram (truncated).
+ */
+function extractRelevantSections(diagram: string, files: ServiceFile[]): string {
+  const combinedContent = files.map((f) => f.content).join("\n").toLowerCase();
+  const sections = diagram.split(/(?=^## CONTROLLER:)/m);
+
+  const relevant = sections.filter((sec) => {
+    const match = sec.match(/^## CONTROLLER:\s*(\S+)/m);
+    if (!match) { return false; }
+    const ctrlBase = match[1].toLowerCase()
+      .replace(/controller$/, "").replace(/resource$/, "").replace(/router$/, "");
+    return combinedContent.includes(ctrlBase) || combinedContent.includes(match[1].toLowerCase());
+  });
+
+  const chosen = relevant.length > 0 ? relevant.join("") : diagram;
+  // Truncate to avoid context saturation
+  return chosen.slice(0, BATCH.MAX_CHARS_SERVICE * 5);
+}
+
+/**
+ * Replaces the old section inside the full diagram with the updated one.
+ * If the updated content is entirely new (not found in original), appends it.
+ */
+function mergeSection(fullDiagram: string, oldSection: string, updatedSection: string): string {
+  if (!updatedSection.trim()) { return fullDiagram; }
+  if (oldSection === fullDiagram) { return updatedSection; } // full-diagram replacement
+  const idx = fullDiagram.indexOf(oldSection);
+  if (idx === -1) {
+    // Section not found verbatim (may have been truncated) — append new content
+    const newControllers = updatedSection
+      .split(/(?=^## CONTROLLER:)/m)
+      .filter((s) => s.startsWith("## CONTROLLER:") && !fullDiagram.includes(s.slice(0, 50)));
+    return newControllers.length > 0
+      ? fullDiagram + "\n\n" + newControllers.join("\n\n")
+      : fullDiagram;
+  }
+  return fullDiagram.slice(0, idx) + updatedSection + fullDiagram.slice(idx + oldSection.length);
+}
+
+/**
+ * LLM call: compare source files against existing documentation, add or fix content.
+ */
+async function validateAndComplete(
+  currentDiagram: string,
+  files: ServiceFile[],
+  model: vscode.LanguageModelChat,
+  token: vscode.CancellationToken
+): Promise<string> {
+  const filesSection = files
+    .map((f) => `### ${shortName(f.relPath)}\n\`\`\`\n${f.content}\n\`\`\``)
+    .join("\n\n");
+
+  const msg = vscode.LanguageModelChatMessage.User(
+    `Eres un revisor de documentación técnica senior.\n\n` +
+    `Tu tarea es contrastar los siguientes archivos de código fuente contra la documentación existente ` +
+    `y asegurarte de que todo esté representado:\n\n` +
+
+    `**Reglas de validación:**\n` +
+    `1. Si el archivo YA está correctamente documentado → devuelve la documentación SIN CAMBIOS\n` +
+    `2. Si falta un endpoint, llamada, participante o flujo → agrégalo al diagrama del controller más relevante\n` +
+    `3. Si hay información INCORRECTA (método equivocado, parámetro incorrecto, flujo erróneo) → corrígela\n` +
+    `4. Si el archivo contiene un controller NO documentado → crea una sección completa nueva\n` +
+    `5. Si el archivo es un helper/util sin conexión directa con ningún endpoint → NO lo agregues\n` +
+    `6. No elimines endpoints ni información ya documentada\n\n` +
+
+    `**IMPORTANTE:**\n` +
+    `- Devuelve SIEMPRE la documentación completa y actualizada (no solo el delta)\n` +
+    `- Mismo formato obligatorio: ## CONTROLLER / ### ENDPOINT / DESCRIPCION / PARAMETROS / RESPUESTA / FLUJO / \`\`\`mermaid\n` +
+    `- Flechas Mermaid: \`->>\` síncronas · \`-->>\` respuestas · \`->)\` async fire-and-forget\n` +
+    `- No inventes métodos ni llamadas que no estén en el código\n\n` +
+
+    `--- DOCUMENTACIÓN ACTUAL ---\n${currentDiagram}\n\n` +
+    `--- ARCHIVOS A VALIDAR (${files.length} archivo(s)) ---\n${filesSection}`
   );
 
   return await callModel(model, msg, token);
