@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { log, logError } from "../logger";
 import { JiraClient, JiraIssueSummary, JiraSubtask, getConfiguredProjects } from "../jira/client";
+import { JIRA } from "../config/defaults";
 
 const JIRA_CONFIG_HELP =
   `## ⚙️ Configura Jira primero\n\n` +
@@ -96,37 +97,16 @@ async function guidedFlow(
     return;
   }
 
-  // ── 2. Show compact table (max 8 rows) ──────────────────────────────────
-  const displayed = issues.slice(0, 8);
-  stream.markdown(issueTable(displayed, jiraBase));
-  if (issues.length > 8) {
-    stream.markdown(`_Mostrando 8 de ${issues.length} issues. Selecciona una en el menú._\n\n`);
-  }
+  // ── 2. Show first page in chat ──────────────────────────────────────────
+  const totalPages = Math.ceil(issues.length / JIRA.PAGE_SIZE);
+  stream.markdown(issueTable(issues.slice(0, JIRA.PAGE_SIZE), jiraBase, 1, totalPages, issues.length));
 
-  // ── 3. QuickPick: select issue ───────────────────────────────────────────
-  interface IssuePickItem extends vscode.QuickPickItem {
-    issueKey: string;
-  }
-
-  const issueItems: IssuePickItem[] = issues.map((i) => ({
-    label:       `$(issues) ${i.key}`,
-    description: i.status,
-    detail:      truncateWords(i.summary, 12),
-    issueKey:    i.key,
-  }));
-
-  const picked = await vscode.window.showQuickPick(issueItems, {
-    title:         "Selecciona una issue",
-    placeHolder:   "Escribe para filtrar…",
-    matchOnDetail: true,
-  });
-
-  if (!picked) {
+  // ── 3. Paginated QuickPick ───────────────────────────────────────────────
+  const issueKey = await pickIssuePaged(issues, stream);
+  if (!issueKey) {
     stream.markdown("_Operación cancelada._");
     return;
   }
-
-  const issueKey = picked.issueKey;
 
   // ── 4. QuickPick: choose action ──────────────────────────────────────────
   const action = await vscode.window.showQuickPick(
@@ -360,16 +340,105 @@ async function updateStatusInteractive(
   log(`[JiraHandler] Transitioned ${subtaskKey} → "${pickedTransition.transitionName}" (id: ${pickedTransition.transitionId})`);
 }
 
+// ─── Paginated issue picker ───────────────────────────────────────────────────
+
+interface IssuePickItem extends vscode.QuickPickItem {
+  issueKey?: string;
+  navDir?:   "prev" | "next";
+}
+
+/**
+ * Shows a paginated QuickPick (JIRA.PAGE_SIZE items per page).
+ * Navigation items "⬅ Página anterior" / "Página siguiente ➡" let the user
+ * browse interactively. Returns the selected issue key, or null if cancelled.
+ */
+async function pickIssuePaged(
+  issues: JiraIssueSummary[],
+  stream: vscode.ChatResponseStream
+): Promise<string | null> {
+  const total      = issues.length;
+  const totalPages = Math.ceil(total / JIRA.PAGE_SIZE);
+  let page = 0;
+
+  while (true) {
+    const start = page * JIRA.PAGE_SIZE;
+    const end   = Math.min(start + JIRA.PAGE_SIZE, total);
+    const slice = issues.slice(start, end);
+
+    const items: IssuePickItem[] = [
+      {
+        label: `Página ${page + 1} de ${totalPages}  ·  issues ${start + 1}–${end} de ${total}`,
+        kind:  vscode.QuickPickItemKind.Separator,
+      },
+      ...slice.map((i): IssuePickItem => ({
+        label:       i.key,
+        description: i.status,
+        detail:      truncateWords(i.summary, 12),
+        issueKey:    i.key,
+      })),
+      ...(page > 0 ? [{
+        label:   `⬅  Página anterior  (${page} de ${totalPages})`,
+        detail:  `Volver a issues ${(page - 1) * JIRA.PAGE_SIZE + 1}–${page * JIRA.PAGE_SIZE}`,
+        navDir:  "prev" as const,
+      }] : []),
+      ...(page + 1 < totalPages ? [{
+        label:   `Página siguiente  (${page + 2} de ${totalPages})  ➡`,
+        detail:  `Ver issues ${end + 1}–${Math.min(end + JIRA.PAGE_SIZE, total)}`,
+        navDir:  "next" as const,
+      }] : []),
+    ];
+
+    const picked = await vscode.window.showQuickPick(items, {
+      title:              `Issues en progreso — ${total} total`,
+      placeHolder:        "Selecciona una issue o navega entre páginas…",
+      matchOnDetail:      true,
+      matchOnDescription: true,
+    });
+
+    if (!picked) { return null; }
+
+    if (picked.navDir === "prev") {
+      page--;
+      // Update chat table to reflect the new page
+      stream.markdown(issueTable(
+        issues.slice((page) * JIRA.PAGE_SIZE, (page + 1) * JIRA.PAGE_SIZE),
+        (vscode.workspace.getConfiguration("companyStandards").get<string>("jiraUrl") ?? "").replace(/\/$/, ""),
+        page + 1, totalPages, total
+      ));
+      continue;
+    }
+    if (picked.navDir === "next") {
+      page++;
+      stream.markdown(issueTable(
+        issues.slice((page) * JIRA.PAGE_SIZE, (page + 1) * JIRA.PAGE_SIZE),
+        (vscode.workspace.getConfiguration("companyStandards").get<string>("jiraUrl") ?? "").replace(/\/$/, ""),
+        page + 1, totalPages, total
+      ));
+      continue;
+    }
+    if (picked.issueKey) {
+      stream.markdown(`\n📌 Issue seleccionada: **${picked.issueKey}** — ${picked.detail ?? ""}\n\n`);
+      return picked.issueKey;
+    }
+  }
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/** Compact issue table: key | summary | status — max 8 rows */
-function issueTable(issues: JiraIssueSummary[], jiraBase: string): string {
+/** Compact issue table for the chat — shows one page with pagination header */
+function issueTable(
+  issues: JiraIssueSummary[],
+  jiraBase: string,
+  page: number,
+  totalPages: number,
+  total: number
+): string {
   const rows = issues.map((i) => {
     const keyCell = jiraBase ? `[${i.key}](${jiraBase}/browse/${i.key})` : i.key;
     return `| ${keyCell} | ${truncateWords(i.summary, 10)} | ${i.status} |`;
   });
   return (
-    `## Issues en progreso (${issues.length})\n\n` +
+    `## Issues en progreso — Página ${page} de ${totalPages} (${total} total)\n\n` +
     `| Clave | Resumen | Estado |\n` +
     `|---|---|---|\n` +
     rows.join("\n") + "\n\n"
