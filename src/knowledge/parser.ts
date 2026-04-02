@@ -1,63 +1,10 @@
 import { KnowledgeBlock } from "./KnowledgeProvider";
 import { log } from "../logger";
 
-export interface NamingRule {
-  context: string;
-  convention: "camelCase" | "PascalCase" | "UPPER_SNAKE" | "kebab-case" | "snake_case";
-  description: string;
-}
-
 export interface ProjectStep {
   order: number;
   title: string;
   description: string;
-}
-
-/**
- * Extracts naming rules from normalized KnowledgeBlock[].
- * Works with any provider (Confluence, etc.).
- *
- * Supports two formats:
- * 1. Table rows: cells[0]=context, cells[1]=convention, cells[2]=description
- * 2. Paragraph with inline text: "use camelCase for test functions"
- */
-export function parseNamingRules(blocks: KnowledgeBlock[]): NamingRule[] {
-  const rules: NamingRule[] = [];
-  let skipNextRow = false;
-
-  for (const block of blocks) {
-    if (block.type === "table") {
-      skipNextRow = block.hasColumnHeader ?? true;
-      continue;
-    }
-
-    if (block.type === "table_row") {
-      if (skipNextRow) { skipNextRow = false; continue; }
-      const cells = block.cells ?? [];
-      if (cells.length >= 3) {
-        const convention = detectConvention(cells[1]);
-        if (convention) {
-          rules.push({ context: cells[0].trim(), convention, description: cells[2].trim() });
-        }
-      }
-      continue;
-    }
-
-    if (block.type === "paragraph" && block.text) {
-      const inlineRegex =
-        /use\s+(camelCase|PascalCase|snake_case|UPPER_SNAKE|kebab-case)\s+for\s+([^\.]+)/gi;
-      let match: RegExpExecArray | null;
-      while ((match = inlineRegex.exec(block.text)) !== null) {
-        rules.push({
-          context: match[2].trim(),
-          convention: match[1] as NamingRule["convention"],
-          description: `Use ${match[1]} for ${match[2].trim()}`,
-        });
-      }
-    }
-  }
-
-  return rules;
 }
 
 /**
@@ -230,12 +177,3 @@ export function blocksToMarkdown(blocks: KnowledgeBlock[]): string {
   return lines.join("\n");
 }
 
-function detectConvention(text: string): NamingRule["convention"] | null {
-  const lower = text.toLowerCase();
-  if (lower.includes("camelcase")) return "camelCase";
-  if (lower.includes("pascalcase")) return "PascalCase";
-  if (lower.includes("upper_snake") || lower.includes("screaming")) return "UPPER_SNAKE";
-  if (lower.includes("kebab")) return "kebab-case";
-  if (lower.includes("snake_case")) return "snake_case";
-  return null;
-}

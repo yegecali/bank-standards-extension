@@ -1,10 +1,7 @@
 import * as vscode from "vscode";
-import { NamingRule, parseNamingRules, parseProjectSteps } from "./knowledge/parser";
+import { parseProjectSteps } from "./knowledge/parser";
 import { resolveWithCache, clearCache } from "./knowledge/cache";
 import { createKnowledgeProvider, resetKnowledgeProvider } from "./knowledge/KnowledgeProviderFactory";
-import { DiagnosticProvider } from "./providers/diagnosticProvider";
-import { BankStandardsCodeActionProvider } from "./providers/codeActionProvider";
-import { StatusBarProvider } from "./providers/statusBarProvider";
 import { registerBankAgent } from "./agent/bankAgent";
 import { GetStandardsTool } from "./agent/tools/GetStandardsTool";
 import { ReviewTestTool } from "./agent/tools/ReviewTestTool";
@@ -12,7 +9,6 @@ import { CreateProjectTool } from "./agent/tools/CreateProjectTool";
 import { initLogger, log, logError, showChannel } from "./logger";
 import { setupConfluenceCommand } from "./commands/setupConfluenceCommand";
 
-let diagnosticProvider: DiagnosticProvider;
 let extensionContext: vscode.ExtensionContext;
 
 export function activate(context: vscode.ExtensionContext) {
@@ -40,14 +36,6 @@ export function activate(context: vscode.ExtensionContext) {
 
   extensionContext = context;
 
-  log("Registering DiagnosticProvider…");
-  diagnosticProvider = new DiagnosticProvider(context);
-  log("DiagnosticProvider ✓");
-
-  log("Registering StatusBarProvider…");
-  new StatusBarProvider(context);
-  log("StatusBarProvider ✓");
-
   log("Registering @bank chat participant…");
   registerBankAgent(context);
   log("@bank chat participant ✓");
@@ -65,26 +53,12 @@ export function activate(context: vscode.ExtensionContext) {
     logError("LM Tools registration FAILED", err);
   }
 
-  const SUPPORTED_LANGUAGES = [
-    { language: "typescript" },
-    { language: "javascript" },
-    { language: "typescriptreact" },
-    { language: "javascriptreact" },
-    { language: "java" },
-  ];
-  const codeActionProvider = vscode.languages.registerCodeActionsProvider(
-    SUPPORTED_LANGUAGES,
-    new BankStandardsCodeActionProvider(),
-    { providedCodeActionKinds: BankStandardsCodeActionProvider.providedCodeActionKinds }
-  );
-  context.subscriptions.push(codeActionProvider);
-
   const refreshCmd = vscode.commands.registerCommand(
     "companyStandards.refreshStandards",
     async () => {
       resetKnowledgeProvider();
       await clearCache(context);
-      await refreshStandards();
+      log("standards refreshed");
     }
   );
 
@@ -115,47 +89,6 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(refreshCmd, newProjectCmd, setupConfluenceCmd);
 
   log("── activate() complete ✓ ─────────────────────────────────────");
-
-  refreshStandards().catch((err: unknown) => {
-    logError("refreshStandards() failed on startup", err);
-    vscode.window.showWarningMessage(
-      "Company Coding Standard: Could not load standards. Check your settings and see Output > Bank Standards."
-    );
-  });
-}
-
-async function refreshStandards() {
-  const config = vscode.workspace.getConfiguration("companyStandards");
-  const pagesMap = config.get<Record<string, string>>("pagesMap") ?? {};
-  const standardsPageId = pagesMap["standards"];
-
-  if (!standardsPageId) {
-    vscode.window.showWarningMessage(
-      'Company Coding Standard: No standards page ID configured. Add "standards" to companyStandards.pagesMap.'
-    );
-    return;
-  }
-
-  try {
-    const provider = createKnowledgeProvider();
-    const { data: rules, pageTitle, fromCache } = await resolveWithCache<NamingRule[]>(
-      extensionContext,
-      standardsPageId,
-      provider,
-      parseNamingRules,
-      "refreshStandards"
-    );
-
-    diagnosticProvider.updateRules(rules);
-
-    const origin = fromCache ? "cache (page unchanged)" : "Confluence (page updated)";
-    vscode.window.showInformationMessage(
-      `Company Coding Standard: ${rules.length} rules loaded from "${pageTitle}" — ${origin}`
-    );
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    vscode.window.showErrorMessage(`Company Coding Standard: ${msg}`);
-  }
 }
 
 async function showProjectGuide(context: vscode.ExtensionContext) {
@@ -244,5 +177,5 @@ function buildProjectGuideHtml(
 }
 
 export function deactivate() {
-  diagnosticProvider?.dispose();
+  // nothing to dispose
 }

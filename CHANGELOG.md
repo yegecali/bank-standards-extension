@@ -2,6 +2,19 @@
 
 All notable changes to the "Company Coding Standard" extension are documented here.
 
+## [0.0.63] - 2026-04-02
+
+### Removed
+- **Naming convention enforcement completely removed** — no more inline diagnostics or quick-fix lightbulbs for naming rules.
+  - Deleted `src/providers/diagnosticProvider.ts`, `src/providers/codeActionProvider.ts`, `src/providers/statusBarProvider.ts`.
+  - Deleted `src/standards/validator.ts`, `src/standards/rules.ts` (and emptied `src/standards/` folder).
+  - Deleted `src/handlers/reviewHandler.ts` (was not imported anywhere).
+  - Deleted `src/test/validator.test.ts`, `src/test/rules.test.ts`.
+- **`NamingRule` interface and `parseNamingRules()` function** removed from `src/knowledge/parser.ts`.
+- **`companyStandards.namingRules`** and **`companyStandards.additionalRules`** configuration properties removed from `package.json`.
+- **`refreshStandards()`** function removed from `src/extension.ts`; the `companyStandards.refreshStandards` command is kept as a no-op (resets provider cache).
+- **`parseNamingRules` tests** removed from `src/test/parser.test.ts`; all other parser tests retained.
+
 ## [0.0.61] - 2026-04-02
 
 ### Removed
