@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { log, logError } from "../logger";
 import { createKnowledgeProvider } from "../knowledge/KnowledgeProviderFactory";
-import { blocksToMarkdown } from "../notion/parser";
+import { blocksToMarkdown } from "../knowledge/parser";
 import { JiraClient, getConfiguredProjects } from "../jira/client";
 import { resolveModel } from "../utils/modelResolver";
 

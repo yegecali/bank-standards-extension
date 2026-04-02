@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { NamingRule } from "../notion/parser";
+import { NamingRule } from "../knowledge/parser";
 import {
   findViolations,
   findAdditionalViolations,
@@ -49,7 +49,7 @@ const DEFAULT_NAMING_RULES: SettingsNamingRule[] = [
 
 export class DiagnosticProvider {
   private collection: vscode.DiagnosticCollection;
-  /** Rules from the knowledge base (Notion/Confluence) — used as fallback */
+  /** Rules from the knowledge base (Confluence) — used as fallback */
   private kbRules: NamingRule[] = [];
   private debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 

@@ -30,7 +30,7 @@ export function showChannel(): void {
  * relevant setting when clicked.
  *
  * @param message   User-facing error message.
- * @param settingFilter  Optional setting key to open (e.g. "companyStandards.notionToken").
+ * @param settingFilter  Optional setting key to open (e.g. "companyStandards.confluenceToken").
  */
 export function notifyError(message: string, settingFilter?: string): void {
   logError(message);

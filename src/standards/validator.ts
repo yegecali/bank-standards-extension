@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { NamingRule } from "../notion/parser";
+import { NamingRule } from "../knowledge/parser";
 import { matchesConvention, suggestFix } from "./rules";
 
 export interface Violation {

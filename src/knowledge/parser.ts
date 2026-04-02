@@ -1,4 +1,4 @@
-import { KnowledgeBlock } from "../knowledge/KnowledgeProvider";
+import { KnowledgeBlock } from "./KnowledgeProvider";
 import { log } from "../logger";
 
 export interface NamingRule {
@@ -15,7 +15,7 @@ export interface ProjectStep {
 
 /**
  * Extracts naming rules from normalized KnowledgeBlock[].
- * Works with any provider (Notion, Confluence, etc.).
+ * Works with any provider (Confluence, etc.).
  *
  * Supports two formats:
  * 1. Table rows: cells[0]=context, cells[1]=convention, cells[2]=description
@@ -94,9 +94,9 @@ export interface PromptTemplate {
 }
 
 /**
- * Parses a Notion page into a list of PromptTemplates.
+ * Parses a knowledge base page into a list of PromptTemplates.
  *
- * Expected Notion page format — each prompt is a section:
+ * Expected page format — each prompt is a section:
  *
  *   ## <name>
  *   <description paragraph>

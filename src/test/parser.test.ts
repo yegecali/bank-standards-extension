@@ -1,4 +1,4 @@
-import { parseNamingRules, parseProjectSteps, parsePromptLibrary, blocksToMarkdown } from "../notion/parser";
+import { parseNamingRules, parseProjectSteps, parsePromptLibrary, blocksToMarkdown } from "../knowledge/parser";
 import { KnowledgeBlock } from "../knowledge/KnowledgeProvider";
 
 // ─── parseNamingRules ────────────────────────────────────────────────────────

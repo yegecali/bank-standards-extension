@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { PromptTemplate } from "../notion/parser";
+import { PromptTemplate } from "../knowledge/parser";
 import { log, logError } from "../logger";
 import { resolveModel } from "../utils/modelResolver";
 
@@ -22,7 +22,7 @@ export async function handlePromptsCommand(
 
   if (templates.length === 0) {
     stream.markdown(
-      "⚠️ No encontré prompts en la página de Confluence/Notion.\n\n" +
+      "⚠️ No encontré prompts en la página de Confluence.\n\n" +
       "Asegúrate de que la página tenga el formato correcto:\n\n" +
       "```\n## nombre-del-prompt\nDescripción breve.\nTexto del prompt aquí.\n```"
     );

@@ -1,5 +1,5 @@
 import { findViolations } from "../standards/validator";
-import { NamingRule } from "../notion/parser";
+import { NamingRule } from "../knowledge/parser";
 import { mockDocument } from "./helpers/mockDocument";
 
 const camelCaseTestRule: NamingRule = {

@@ -1,6 +1,6 @@
 /**
  * Provider-agnostic abstraction for any knowledge source.
- * Implementations: NotionKnowledgeProvider, ConfluenceKnowledgeProvider, etc.
+ * Implementations: ConfluenceKnowledgeProvider
  */
 
 export type KnowledgeBlockType =
@@ -36,7 +36,7 @@ export interface KnowledgePageMeta {
 }
 
 export interface KnowledgeProvider {
-  /** Human-readable name shown in logs and UI (e.g. "Notion", "Confluence") */
+  /** Human-readable name shown in logs and UI (e.g. "Confluence") */
   readonly name: string;
   /** Lightweight call — returns only metadata, no content */
   getPageMetadata(pageId: string): Promise<KnowledgePageMeta>;

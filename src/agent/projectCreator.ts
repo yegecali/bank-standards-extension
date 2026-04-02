@@ -59,7 +59,7 @@ export async function createProjectCore(
  * Chat-stream variant — asks for project name via input box, then
  * delegates to createProjectCore.
  */
-export async function createProjectFromNotion(
+export async function createProjectFromKb(
   blocks: KnowledgeBlock[],
   stream: vscode.ChatResponseStream
 ): Promise<CreatedProject | null> {

@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { KnowledgeBlock, KnowledgeProvider } from "../knowledge/KnowledgeProvider";
+import { KnowledgeBlock, KnowledgeProvider } from "./KnowledgeProvider";
 import { log } from "../logger";
 
 export interface CacheEntry<T> {
@@ -20,7 +20,7 @@ const CACHE_KEY_PREFIX = "companyStandards.cache.";
  * 3. If the date matches the cache → return cached data.
  * 4. If the page changed (or no cache) → fetch full blocks, parse, store, return.
  *
- * Works with any KnowledgeProvider (Notion, Confluence, etc.).
+ * Works with any KnowledgeProvider (Confluence, etc.).
  */
 export async function resolveWithCache<T>(
   context: vscode.ExtensionContext,

@@ -1,4 +1,4 @@
-import { resolveWithCache, clearCache, CacheEntry } from "../notion/cache";
+import { resolveWithCache, clearCache, CacheEntry } from "../knowledge/cache";
 import { KnowledgeBlock } from "../knowledge/KnowledgeProvider";
 
 // globalState mock: simple in-memory key-value store

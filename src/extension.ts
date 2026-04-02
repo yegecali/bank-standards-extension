@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
-import { NamingRule, parseNamingRules, parseProjectSteps } from "./notion/parser";
-import { resolveWithCache, clearCache } from "./notion/cache";
+import { NamingRule, parseNamingRules, parseProjectSteps } from "./knowledge/parser";
+import { resolveWithCache, clearCache } from "./knowledge/cache";
 import { createKnowledgeProvider, resetKnowledgeProvider } from "./knowledge/KnowledgeProviderFactory";
 import { DiagnosticProvider } from "./providers/diagnosticProvider";
 import { BankStandardsCodeActionProvider } from "./providers/codeActionProvider";
@@ -27,7 +27,7 @@ export function activate(context: vscode.ExtensionContext) {
   // Log current settings (no sensitive values)
   const cfg = vscode.workspace.getConfiguration("companyStandards");
   log(`knowledgeSource: ${cfg.get("knowledgeSource") ?? "(not set)"}`);
-  log(`notionToken    : ${cfg.get<string>("notionToken") ? "✓ configured" : "✗ NOT SET"}`);
+  log(`confluenceToken: ${cfg.get<string>("confluenceToken") ? "✓ configured" : "✗ NOT SET"}`);
   log(`confluenceUrl  : ${cfg.get("confluenceUrl") || "(not set)"}`);
   log(`specialty      : ${cfg.get("specialty") ?? "(not set)"}`);
   const pagesMap = cfg.get<Record<string, string>>("pagesMap") ?? {};
@@ -92,7 +92,6 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("companyStandards.knowledgeSource") ||
-          e.affectsConfiguration("companyStandards.notionToken") ||
           e.affectsConfiguration("companyStandards.confluenceUrl") ||
           e.affectsConfiguration("companyStandards.confluenceEmail") ||
           e.affectsConfiguration("companyStandards.confluenceToken")) {
@@ -149,7 +148,7 @@ async function refreshStandards() {
 
     diagnosticProvider.updateRules(rules);
 
-    const origin = fromCache ? "cache (page unchanged)" : "Notion (page updated)";
+    const origin = fromCache ? "cache (page unchanged)" : "Confluence (page updated)";
     vscode.window.showInformationMessage(
       `Company Coding Standard: ${rules.length} rules loaded from "${pageTitle}" — ${origin}`
     );

@@ -1,10 +1,9 @@
 import * as vscode from "vscode";
 import { KnowledgeProvider } from "./KnowledgeProvider";
-import { NotionKnowledgeProvider } from "./providers/NotionKnowledgeProvider";
 import { ConfluenceKnowledgeProvider } from "./providers/ConfluenceKnowledgeProvider";
 import { log } from "../logger";
 
-export type KnowledgeSourceType = "notion" | "confluence";
+export type KnowledgeSourceType = "confluence";
 
 let cachedProvider: KnowledgeProvider | null = null;
 let cachedSource: string | null = null;
@@ -16,7 +15,7 @@ let cachedSource: string | null = null;
  */
 export function createKnowledgeProvider(): KnowledgeProvider {
   const config = vscode.workspace.getConfiguration("companyStandards");
-  const source = (config.get<string>("knowledgeSource") ?? "notion") as KnowledgeSourceType;
+  const source = (config.get<string>("knowledgeSource") ?? "confluence") as KnowledgeSourceType;
 
   if (cachedProvider && cachedSource === source) {
     return cachedProvider;
@@ -24,18 +23,7 @@ export function createKnowledgeProvider(): KnowledgeProvider {
 
   log(`[KnowledgeProviderFactory] Creating provider for source: "${source}"`);
 
-  switch (source) {
-    case "notion":
-      cachedProvider = new NotionKnowledgeProvider();
-      break;
-    case "confluence":
-      cachedProvider = new ConfluenceKnowledgeProvider();
-      break;
-    default:
-      log(`[KnowledgeProviderFactory] Unknown source "${source}", falling back to Notion`);
-      cachedProvider = new NotionKnowledgeProvider();
-  }
-
+  cachedProvider = new ConfluenceKnowledgeProvider();
   cachedSource = source;
   return cachedProvider;
 }

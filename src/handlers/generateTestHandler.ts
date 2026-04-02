@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import * as path    from "path";
 import { log, logError } from "../logger";
 import { createKnowledgeProvider } from "../knowledge/KnowledgeProviderFactory";
-import { blocksToMarkdown } from "../notion/parser";
+import { blocksToMarkdown } from "../knowledge/parser";
 import { resolvePageId } from "../agent/specialtyResolver";
 import { resolveModel } from "../utils/modelResolver";
 

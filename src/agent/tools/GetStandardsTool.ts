@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { createKnowledgeProvider } from "../../knowledge/KnowledgeProviderFactory";
-import { blocksToMarkdown } from "../../notion/parser";
+import { blocksToMarkdown } from "../../knowledge/parser";
 import { resolvePageId } from "../specialtyResolver";
 
 export interface GetStandardsInput {

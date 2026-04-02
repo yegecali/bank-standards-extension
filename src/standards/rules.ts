@@ -1,4 +1,4 @@
-import { NamingRule } from "../notion/parser";
+import { NamingRule } from "../knowledge/parser";
 
 /**
  * Checks whether a given identifier matches the expected convention.

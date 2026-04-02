@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { renderPrompt } from "@vscode/prompt-tsx";
 import { log, logError } from "../logger";
 import { createKnowledgeProvider } from "../knowledge/KnowledgeProviderFactory";
-import { parsePromptLibrary, blocksToMarkdown } from "../notion/parser";
+import { parsePromptLibrary, blocksToMarkdown } from "../knowledge/parser";
 import { handlePromptsCommand } from "../handlers/promptLibraryHandler";
 import { handleNewFeatureCommand } from "../handlers/newFeatureHandler";
 import { handleJiraCommand } from "../handlers/jiraHandler";
@@ -25,7 +25,7 @@ import {
   applyChildPageAsGuide,
   applyChildPageAsStandard,
 } from "../handlers/confluenceChildPageHandler";
-import { isCreateIntent, createProjectFromNotion } from "./projectCreator";
+import { isCreateIntent, createProjectFromKb } from "./projectCreator";
 import { getStagedDiff } from "./gitHelper";
 import { BankPrompt } from "./BankPrompt";
 import {
@@ -181,8 +181,10 @@ Soy tu agente de estándares de desarrollo. Te ayudo a escribir código correcto
 
 \`\`\`json
 {
-  "companyStandards.knowledgeSource": "notion",
-  "companyStandards.notionToken":     "secret_xxxx",
+  "companyStandards.knowledgeSource": "confluence",
+  "companyStandards.confluenceUrl":   "https://tuempresa.atlassian.net",
+  "companyStandards.confluenceEmail": "tu@empresa.com",
+  "companyStandards.confluenceToken": "tu-api-token",
   "companyStandards.specialtiesMap": {
     "backend": {
       "standards": "<id-de-pagina>",
@@ -321,7 +323,7 @@ function makeHandler(
 
       if (!setupPage) {
         stream.markdown(
-          `⚠️ Configura \`companyStandards.setupPage\` con el ID o URL de la página de Notion/Confluence ` +
+          `⚠️ Configura \`companyStandards.setupPage\` con el ID o URL de la página de Confluence ` +
             `que contiene tus guías de setup.\n\n` +
             `Cada encabezado H2 define una guía. Ejemplo:\n\n` +
             "```markdown\n" +
@@ -495,7 +497,7 @@ function makeHandler(
     );
     log(`[BankAgent] Loading page id: ${pageId}`);
 
-    let notionMarkdown: string;
+    let pageMarkdown: string;
     let pageTitle: string;
 
     try {
@@ -504,9 +506,9 @@ function makeHandler(
 
       const rawPage = await provider.getPage(pageId);
       pageTitle = rawPage.title;
-      notionMarkdown = blocksToMarkdown(rawPage.blocks);
+      pageMarkdown = blocksToMarkdown(rawPage.blocks);
       log(
-        `[BankAgent] Page "${pageTitle}" loaded, ~${notionMarkdown.length} chars`,
+        `[BankAgent] Page "${pageTitle}" loaded, ~${pageMarkdown.length} chars`,
       );
     } catch (err: unknown) {
       logError("[BankAgent] Failed to load knowledge page", err);
@@ -599,7 +601,7 @@ function makeHandler(
 
       const provider = createKnowledgeProvider();
       const page = await provider.getPage(pageId);
-      const result = await createProjectFromNotion(page.blocks, stream);
+      const result = await createProjectFromKb(page.blocks, stream);
 
       if (result) {
         stream.markdown(
@@ -647,7 +649,7 @@ function makeHandler(
 
     const systemPrompt =
       `Eres un agente de estándares de la compañía integrado en VSCode. Tienes acceso a la documentación oficial ` +
-      `del banco almacenada en Notion. Responde SOLO basándote en el contenido de la documentación proporcionada. ` +
+      `del banco almacenada en Confluence. Responde SOLO basándote en el contenido de la documentación proporcionada. ` +
       `IMPORTANTE: Este agente SÍ puede crear proyectos y generar archivos en disco automáticamente. ` +
       `Cuando el usuario pida crear, generar o inicializar un proyecto, dile que el agente lo generará ` +
       `y que debe seleccionar la carpeta destino en el diálogo que aparecerá. ` +
@@ -685,7 +687,7 @@ function makeHandler(
       {
         systemPrompt,
         reviewInstruction,
-        notionContent: notionMarkdown,
+        kbContent: pageMarkdown,
         pageTitle,
         activeFileContext,
         userPrompt,
@@ -723,7 +725,7 @@ function makeHandler(
 
     // 6 — Action buttons after response
     stream.button({
-      title: "Actualizar estándares desde Notion",
+      title: "Actualizar estándares",
       command: "companyStandards.refreshStandards",
     });
 

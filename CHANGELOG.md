@@ -2,6 +2,26 @@
 
 All notable changes to the "Company Coding Standard" extension are documented here.
 
+## [0.0.59] - 2026-04-01
+
+### Removed
+- **Notion integration completely removed** — Confluence is now the only knowledge source.
+  - Deleted `src/notion/client.ts`, `src/notion/cache.ts`, `src/knowledge/providers/NotionKnowledgeProvider.ts`, and the `src/notion/` directory.
+  - Removed `companyStandards.notionToken` setting from `package.json`.
+  - Removed `"notion"` from the `knowledgeSource` enum; default changed from `"notion"` to `"confluence"`.
+  - Removed `"notion"` keyword from extension manifest.
+
+### Changed
+- `src/notion/parser.ts` moved to `src/knowledge/parser.ts` (provider-agnostic; no logic changes).
+- `src/notion/cache.ts` moved to `src/knowledge/cache.ts` (provider-agnostic; no logic changes).
+- `KnowledgeProviderFactory`: simplified to always return `ConfluenceKnowledgeProvider`; `KnowledgeSourceType` is now `"confluence"` only.
+- `bankAgent.ts`: renamed `notionMarkdown` → `pageMarkdown`; updated HELP_TEXT to show Confluence config; system prompt now says "almacenada en Confluence"; `/setup` warning updated; "Actualizar estándares desde Notion" button renamed to "Actualizar estándares".
+- `BankPrompt.tsx`: renamed prop `notionContent` → `kbContent`; updated JSDoc comment from "Notion documentation" to "Knowledge base documentation".
+- `projectCreator.ts`: renamed export `createProjectFromNotion` → `createProjectFromKb`.
+- `extension.ts`: log line changed from `notionToken` → `confluenceToken`; change-listener no longer watches `notionToken`; "Notion (page updated)" message → "Confluence (page updated)".
+- All remaining `../notion/parser` imports across handlers and tools updated to `../knowledge/parser`.
+- All remaining `../notion/cache` imports updated to `../knowledge/cache`.
+
 ## [0.0.58] - 2026-04-01
 
 ### Added

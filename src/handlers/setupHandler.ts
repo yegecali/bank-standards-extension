@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { PromptTemplate } from "../notion/parser";
+import { PromptTemplate } from "../knowledge/parser";
 import { log, logError } from "../logger";
 import { resolveModel } from "../utils/modelResolver";
 

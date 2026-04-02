@@ -15,7 +15,7 @@ import * as vscode from "vscode";
 export interface BankPromptProps extends BasePromptElementProps {
   systemPrompt: string;
   reviewInstruction: string;
-  notionContent: string;
+  kbContent: string;
   pageTitle: string;
   activeFileContext: string;
   userPrompt: string;
@@ -29,7 +29,7 @@ export interface BankPromptProps extends BasePromptElementProps {
  *   100 — system instructions (never pruned)
  *    90 — current user query  (never pruned)
  *    80 — active file content (pruned before query)
- *    70 — Notion documentation (pruned before file)
+ *    70 — Knowledge base documentation (pruned before file)
  *     0 — chat history        (first to be pruned)
  */
 export class BankPrompt extends PromptElement<BankPromptProps> {
@@ -37,7 +37,7 @@ export class BankPrompt extends PromptElement<BankPromptProps> {
     const {
       systemPrompt,
       reviewInstruction,
-      notionContent,
+      kbContent,
       pageTitle,
       activeFileContext,
       userPrompt,
@@ -46,7 +46,7 @@ export class BankPrompt extends PromptElement<BankPromptProps> {
 
     const docSection =
       `## Documentación: "${pageTitle}"\n\n` +
-      notionContent;
+      kbContent;
 
     return (
       <>
@@ -56,7 +56,7 @@ export class BankPrompt extends PromptElement<BankPromptProps> {
           {reviewInstruction}
         </UserMessage>
 
-        {/* Notion documentation — pruned before file context */}
+        {/* Knowledge base documentation — pruned before file context */}
         <UserMessage priority={70}>{docSection}</UserMessage>
 
         {/* Active file content — pruned before user query */}

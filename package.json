@@ -1,7 +1,7 @@
 {
   "name": "company-coding-standard",
   "displayName": "Company Coding Standard",
-  "description": "Define and enforce your company's development standards directly in VSCode — powered by your own knowledge base (Notion or Confluence). Naming conventions, test standards, project scaffolding, prompt library, Jira integration, and AI agent.",
+  "description": "Define and enforce your company's development standards directly in VSCode — powered by your own knowledge base (Confluence). Naming conventions, test standards, project scaffolding, prompt library, Jira integration, and AI agent.",
   "version": "0.0.59",
   "publisher": "yemicanchari",
   "preview": true,
@@ -24,7 +24,6 @@
     "standards",
     "naming conventions",
     "copilot",
-    "notion",
     "confluence",
     "java",
     "quarkus"
@@ -57,7 +56,7 @@
           },
           {
             "name": "create",
-            "description": "Genera un proyecto Maven + Java 21 + Quarkus desde la plantilla de Notion"
+            "description": "Genera un proyecto Maven + Java 21 + Quarkus desde la plantilla del knowledge base"
           },
           {
             "name": "prompts",
@@ -232,16 +231,10 @@
         "companyStandards.knowledgeSource": {
           "type": "string",
           "enum": [
-            "notion",
             "confluence"
           ],
-          "default": "notion",
-          "description": "Knowledge source to use: 'notion' or 'confluence'"
-        },
-        "companyStandards.notionToken": {
-          "type": "string",
-          "default": "",
-          "description": "Notion Integration Token (from notion.so/my-integrations)"
+          "default": "confluence",
+          "description": "Knowledge source to use: 'confluence'"
         },
         "companyStandards.confluenceUrl": {
           "type": "string",
@@ -536,12 +529,12 @@
         "companyStandards.projectActionsPage": {
           "type": "string",
           "default": "",
-          "description": "ID or URL of the Notion/Confluence page that contains the project action prompts used by /project. Each H2 heading defines one action (e.g. ## agrega-redis)."
+          "description": "ID or URL of the Confluence page that contains the project action prompts used by /project. Each H2 heading defines one action (e.g. ## agrega-redis)."
         },
         "companyStandards.setupPage": {
           "type": "string",
           "default": "",
-          "description": "ID or URL of the Notion/Confluence page that contains the setup guides used by /setup. Each H2 heading defines one setup guide (e.g. ## maven, ## docker). The body is the company-specific prompt that tells the AI what steps to follow."
+          "description": "ID or URL of the Confluence page that contains the setup guides used by /setup. Each H2 heading defines one setup guide (e.g. ## maven, ## docker). The body is the company-specific prompt that tells the AI what steps to follow."
         },
         "companyStandards.jiraJql": {
           "type": "string",

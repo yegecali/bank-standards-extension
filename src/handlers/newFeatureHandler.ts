@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { log, logError } from "../logger";
 import { JiraClient, JiraIssue, getConfiguredProjects } from "../jira/client";
 import { createKnowledgeProvider } from "../knowledge/KnowledgeProviderFactory";
-import { blocksToMarkdown } from "../notion/parser";
+import { blocksToMarkdown } from "../knowledge/parser";
 import { resolvePageId, PageType } from "../agent/specialtyResolver";
 import { BATCH, EXCLUDE_GLOB, SRC_EXTENSIONS } from "../config/defaults";
 

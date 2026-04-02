@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { KnowledgeProvider } from "../knowledge/KnowledgeProvider";
-import { blocksToMarkdown } from "../notion/parser";
+import { blocksToMarkdown } from "../knowledge/parser";
 import { resolveModel } from "../utils/modelResolver";
 import { log, logError } from "../logger";
 
