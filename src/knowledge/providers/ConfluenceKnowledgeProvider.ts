@@ -32,6 +32,15 @@ export class ConfluenceKnowledgeProvider implements KnowledgeProvider {
       blocks: adfToBlocks(page.adf.content ?? []),
     };
   }
+
+  async getChildPages(pageId: string): Promise<KnowledgePageMeta[]> {
+    const children = await this.client.getChildPages(pageId);
+    return children.map((c) => ({
+      id:           c.id,
+      title:        c.title,
+      lastModified: "",
+    }));
+  }
 }
 
 // ─── ADF → KnowledgeBlock conversion ─────────────────────────────────────────

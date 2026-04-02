@@ -40,23 +40,26 @@ function toKnowledgeBlock(block: NotionBlock): KnowledgeBlock {
   const type = block.type;
   const content = (block[type] as Record<string, unknown>) ?? {};
 
+  type RichTextArray = Array<{ plain_text: string }>;
+  const richText = content.rich_text as RichTextArray | undefined;
+
   switch (type) {
     case "heading_1":
-      return { type: "heading1", text: rt(content.rich_text) };
+      return { type: "heading1", text: rt(richText) };
     case "heading_2":
-      return { type: "heading2", text: rt(content.rich_text) };
+      return { type: "heading2", text: rt(richText) };
     case "heading_3":
-      return { type: "heading3", text: rt(content.rich_text) };
+      return { type: "heading3", text: rt(richText) };
     case "paragraph":
-      return { type: "paragraph", text: rt(content.rich_text) };
+      return { type: "paragraph", text: rt(richText) };
     case "bulleted_list_item":
-      return { type: "bullet", text: rt(content.rich_text) };
+      return { type: "bullet", text: rt(richText) };
     case "numbered_list_item":
-      return { type: "numbered", text: rt(content.rich_text) };
+      return { type: "numbered", text: rt(richText) };
     case "code":
       return {
         type: "code",
-        text: rt(content.rich_text),
+        text: rt(richText),
         language: (content.language as string | undefined) ?? "plain",
       };
     case "table":
@@ -76,7 +79,7 @@ function toKnowledgeBlock(block: NotionBlock): KnowledgeBlock {
     case "divider":
       return { type: "divider", text: "" };
     default:
-      return { type: "unknown", text: rt(content.rich_text) };
+      return { type: "unknown", text: rt(richText) };
   }
 }
 

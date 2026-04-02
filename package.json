@@ -41,7 +41,7 @@
         "fullName": "Company Coding Standard Agent",
         "description": "Consulta estándares, crea proyectos y revisa tests según las guías del banco",
         "isSticky": true,
-        "icon": "images/company-agent.svg",
+        "icon": "images/icon.svg",
         "commands": [
           {
             "name": "help",

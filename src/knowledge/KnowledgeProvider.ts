@@ -42,4 +42,9 @@ export interface KnowledgeProvider {
   getPageMetadata(pageId: string): Promise<KnowledgePageMeta>;
   /** Full call — returns metadata + all blocks */
   getPage(pageId: string): Promise<KnowledgePage>;
+  /**
+   * Optional: lists direct child pages.
+   * Currently implemented only by ConfluenceKnowledgeProvider.
+   */
+  getChildPages?(pageId: string): Promise<KnowledgePageMeta[]>;
 }

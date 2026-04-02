@@ -205,6 +205,27 @@ export class ConfluenceClient {
   }
 
   /**
+   * Lists the direct child pages of a given page (Confluence v2 API).
+   * Returns id + title only (lightweight call).
+   */
+  async getChildPages(pageId: string): Promise<Array<{ id: string; title: string }>> {
+    this.validateConfig();
+    const url = `${this.baseUrl}/wiki/api/v2/pages/${pageId}/children?limit=50&sort=title`;
+    log(`[ConfluenceClient] GET child pages → ${url}`);
+    try {
+      const res = await axios.get(url, { headers: this.headers() });
+      const results = res.data.results ?? [];
+      log(`[ConfluenceClient] ← ${res.status} | ${results.length} children`);
+      return (results as Record<string, unknown>[]).map((p) => ({
+        id:    String(p["id"]),
+        title: String(p["title"]),
+      }));
+    } catch (err) {
+      throw this.wrapError(err, url);
+    }
+  }
+
+  /**
    * Lists pages inside a Confluence space by space ID.
    */
   async getPagesInSpace(spaceId: string): Promise<Array<{ id: string; title: string }>> {
