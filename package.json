@@ -48,7 +48,7 @@
           },
           {
             "name": "standards",
-            "description": "Consulta las convenciones de nomenclatura del banco"
+            "description": "Lista los estándares de código disponibles en Confluence y te guía para aplicarlos. Uso: /standards <id-pagina-padre> | /standards (con standardsPageId configurado)"
           },
           {
             "name": "prompts",
@@ -64,7 +64,7 @@
           },
           {
             "name": "project",
-            "description": "Ejecuta acciones sobre tu proyecto usando prompts del knowledge base. Lee pom.xml, properties y estructura del workspace, genera/modifica archivos. Uso: /project | /project <acción> (ej: /project agrega-redis, /project agrega-client-rest)"
+            "description": "Lista las guías de herramientas disponibles en Confluence (Dev Tools) y te guía para aplicarlas. Uso: /project <id-pagina-padre> | /project (con devToolsPageId configurado)"
           },
           {
             "name": "search",

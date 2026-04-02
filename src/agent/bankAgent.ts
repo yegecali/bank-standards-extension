@@ -224,12 +224,13 @@ function makeHandler(
     }
 
     // 0d — Handle /project command (early-exit)
-    // New flow: devToolsPageId → list child pages → QuickPick → apply guide
-    // Legacy flow: projectActionsPage → single page with H2 sections
+    // Priority: arg page ID > devToolsPageId setting > projectActionsPage (legacy)
     if (request.command === "project") {
-      const cfg = vscode.workspace.getConfiguration("companyStandards");
-      const devToolsPage = (cfg.get<string>("devToolsPageId") ?? "").trim();
-      const actionsPage = (cfg.get<string>("projectActionsPage") ?? "").trim();
+      const cfg         = vscode.workspace.getConfiguration("companyStandards");
+      const argPageId   = looksLikePageId(userPrompt) ? userPrompt : "";
+      const devToolsPage = argPageId
+                        || (cfg.get<string>("devToolsPageId") ?? "").trim();
+      const contextArg  = argPageId ? "" : userPrompt;
 
       if (devToolsPage) {
         const provider = createKnowledgeProvider();
@@ -243,7 +244,7 @@ function makeHandler(
           await applyChildPageAsGuide(
             picked.title,
             picked.markdown,
-            userPrompt,
+            contextArg,
             stream,
             request.model,
             token,
@@ -252,11 +253,13 @@ function makeHandler(
         return { metadata: { intent: "project" } };
       }
 
+      // Legacy: single page with H2 sections
+      const actionsPage = (cfg.get<string>("projectActionsPage") ?? "").trim();
       if (!actionsPage) {
         stream.markdown(
-          `⚠️ Configura \`companyStandards.devToolsPageId\` con el ID de la página padre "Dev Tools" en Confluence, ` +
-            `o \`companyStandards.projectActionsPage\` para el modo legado.\n\n` +
-            `Cada subpágina (o encabezado H2) define una acción de proyecto.`,
+          `⚠️ Pasa el ID de la página padre como argumento: \`/project <id-de-pagina>\`\n\n` +
+          `O configura \`companyStandards.devToolsPageId\` en tus settings.\n\n` +
+          `Cada subpágina de esa página define una guía de herramienta.`,
         );
         return { metadata: { intent: "project" } };
       }
@@ -270,7 +273,7 @@ function makeHandler(
           `[BankAgent] /project legacy — loaded ${templates.length} actions from "${actionsPage}"`,
         );
         await handleProjectCommand(
-          userPrompt,
+          contextArg,
           templates,
           stream,
           request.model,
@@ -306,20 +309,29 @@ function makeHandler(
     }
 
     // 0f — Handle /standards command (early-exit)
-    // Uses standardsPageId as parent page; child pages = individual standards
+    // Priority: arg page ID > standardsPageId setting; no legacy fallthrough
     if (request.command === "standards") {
       const cfg           = vscode.workspace.getConfiguration("companyStandards");
-      const standardsPage = (cfg.get<string>("standardsPageId") ?? "").trim();
+      const argPageId     = looksLikePageId(userPrompt) ? userPrompt : "";
+      const standardsPage = argPageId
+                          || (cfg.get<string>("standardsPageId") ?? "").trim();
+      const contextArg    = argPageId ? "" : userPrompt;
 
-      if (standardsPage) {
-        const provider = createKnowledgeProvider();
-        const picked   = await pickAndLoadChildPage(standardsPage, "Estándares de Desarrollo", stream, provider);
-        if (picked) {
-          await applyChildPageAsStandard(picked.title, picked.markdown, userPrompt, stream, request.model, token);
-        }
+      if (!standardsPage) {
+        stream.markdown(
+          `⚠️ Pasa el ID de la página padre como argumento: \`/standards <id-de-pagina>\`\n\n` +
+          `O configura \`companyStandards.standardsPageId\` en tus settings.\n\n` +
+          `Cada subpágina de esa página es un estándar seleccionable.`,
+        );
         return { metadata: { intent: "standards" } };
       }
-      // No standardsPageId set — fall through to legacy knowledge-page flow
+
+      const provider = createKnowledgeProvider();
+      const picked   = await pickAndLoadChildPage(standardsPage, "Estándares de Desarrollo", stream, provider);
+      if (picked) {
+        await applyChildPageAsStandard(picked.title, picked.markdown, contextArg, stream, request.model, token);
+      }
+      return { metadata: { intent: "standards" } };
     }
 
     // 1 — Detect specialty: prompt mention > active setting
@@ -541,4 +553,13 @@ function detectIntent(prompt: string): string {
   if (standardsKeywords.some((k) => lower.includes(k))) return "standards";
   if (projectKeywords.some((k) => lower.includes(k))) return "project";
   return "project";
+}
+
+/**
+ * Returns true if the string looks like a Confluence page ID (numeric or
+ * short alphanumeric slug with no spaces), so it can be used directly as
+ * the parent page argument instead of a natural-language query.
+ */
+function looksLikePageId(s: string): boolean {
+  return s.length > 0 && s.length < 60 && /^[\w-]+$/.test(s);
 }
