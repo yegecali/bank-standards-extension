@@ -51,36 +51,12 @@
             "description": "Consulta las convenciones de nomenclatura del banco"
           },
           {
-            "name": "review",
-            "description": "Revisa el archivo activo contra los estándares de la compañía: nomenclatura, estructura, calidad y tests. Requiere el archivo abierto en el editor."
-          },
-          {
-            "name": "create",
-            "description": "Genera un proyecto Maven + Java 21 + Quarkus desde la plantilla del knowledge base"
-          },
-          {
             "name": "prompts",
             "description": "Lista los prompts disponibles o aplica uno: /prompts <nombre>"
           },
           {
-            "name": "specialty",
-            "description": "Cambia la especialidad activa (frontend, backend, qa) o lista las disponibles"
-          },
-          {
-            "name": "generate-test",
-            "description": "Genera tests unitarios Triple-AAA para el archivo activo. Detecta el lenguaje (Java→JUnit5, TS→Jest, Python→pytest), carga los estándares de testing y escribe el archivo de test automáticamente."
-          },
-          {
             "name": "docs",
             "description": "Genera JSDoc/JavaDoc para el archivo activo siguiendo los estándares de documentación del banco"
-          },
-          {
-            "name": "commit",
-            "description": "Sugiere un mensaje de commit en formato Conventional Commits basado en el git diff staged. Detecta automáticamente el issue de Jira desde el nombre del branch."
-          },
-          {
-            "name": "new-feature",
-            "description": "Flujo guiado: selecciona una historia de Jira, planifica e implementa siguiendo los estándares de la compañía"
           },
           {
             "name": "jira",
@@ -91,14 +67,6 @@
             "description": "Ejecuta acciones sobre tu proyecto usando prompts del knowledge base. Lee pom.xml, properties y estructura del workspace, genera/modifica archivos. Uso: /project | /project <acción> (ej: /project agrega-redis, /project agrega-client-rest)"
           },
           {
-            "name": "onboarding",
-            "description": "Guía interactiva para nuevos developers: estándares de la empresa, arquitectura del proyecto, cómo levantar el ambiente local y tu primera tarea en Jira — todo en un solo flujo."
-          },
-          {
-            "name": "setup",
-            "description": "Genera una guía de setup del ambiente de desarrollo basada en los pasos definidos por tu empresa en el knowledge base. Lee el proyecto real (pom.xml, docker-compose, etc.) y adapta las instrucciones. Uso: /setup | /setup <guía> (ej: /setup maven, /setup docker)"
-          },
-          {
             "name": "search",
             "description": "Busca en tu base de conocimientos de Confluence con lenguaje natural y Copilot responde basándose en los resultados. Uso: /search <pregunta> (ej: /search cómo configurar kafka, /search proceso de deploy)"
           },
@@ -107,36 +75,17 @@
             "description": "Analiza el proyecto abierto y genera diagramas de secuencia Mermaid por endpoint. Lee controladores, contratos OpenAPI y servicios en 2 iteraciones. Escribe el resultado en docs/sequence-diagrams.md"
           },
           {
-            "name": "document",
-            "description": "Documenta todos los métodos del proyecto en un archivo Markdown. Por cada método: descripción, parámetros, retorno, excepciones, a quién llama y quién lo llama. Escribe el resultado en docs/code-documentation.md"
-          },
-          {
             "name": "security",
             "description": "Analiza el proyecto en busca de vulnerabilidades de seguridad (OWASP Top 10 + riesgos configurables). Procesa en lotes con 2 iteraciones: detección → análisis profundo con soluciones. Escribe el reporte en docs/security-report.md"
-          },
-          {
-            "name": "checkstyle",
-            "description": "Revisa y corrige todos los archivos Java: genera JavaDoc, arregla indentación y espaciado sin tocar la lógica. Luego valida con 'mvn checkstyle:check' e itera hasta limpiar los errores. Escribe el reporte en docs/checkstyle-report.md"
-          },
-          {
-            "name": "pr-review",
-            "description": "Revisa el diff completo de la rama actual vs. main (git diff main...HEAD). LLM analiza: cambios de lógica, cobertura de tests, nomenclatura, bugs potenciales y violaciones de estándares. Pide la rama base por QuickPick."
-          },
-          {
-            "name": "coverage",
-            "description": "Analiza la cobertura de tests del proyecto Maven. Puede ejecutar 'mvn test' primero, luego lee target/site/jacoco/jacoco.csv (JaCoCo) o target/surefire-reports. Muestra tabla de cobertura por clase y sugiere qué testear en clases bajo el umbral."
           }
         ],
         "sampleRequests": [
-          "Soy nuevo en el equipo, guíame",
-          "Crear nuevo proyecto",
-          "Agregar tests al archivo activo",
-          "Agregar documentación al archivo activo",
-          "Revisar archivo activo contra estándares",
+          "Analiza la arquitectura del proyecto",
+          "Busca información sobre kafka en el knowledge base",
           "Ver mis subtareas de Jira",
           "Ver estándares de nomenclatura",
           "Ver issues en progreso de Jira",
-          "Acciones de proyecto"
+          "Analiza la seguridad del proyecto"
         ],
         "disambiguation": [
           {
@@ -255,23 +204,6 @@
           "type": "string",
           "default": "",
           "description": "Optional: Confluence space key to restrict /search results (e.g. TEAM, DEV). Leave empty to search all accessible spaces."
-        },
-        "companyStandards.checkstyleConfigPath": {
-          "type": "string",
-          "default": "",
-          "description": "Ruta relativa al archivo checkstyle.xml desde la raíz del workspace (ej. 'config/checkstyle/checkstyle.xml'). Si está vacío, se busca automáticamente en ubicaciones comunes."
-        },
-        "companyStandards.mavenExecutable": {
-          "type": "string",
-          "default": "mvn",
-          "description": "Ejecutable de Maven para /checkstyle y /coverage (ej. 'mvn', './mvnw', '/usr/local/bin/mvn'). Default: 'mvn'."
-        },
-        "companyStandards.coverageThreshold": {
-          "type": "number",
-          "default": 60,
-          "minimum": 0,
-          "maximum": 100,
-          "description": "Umbral mínimo de cobertura de líneas (%) para /coverage. Clases con cobertura inferior se marcan con ⚠️ y reciben sugerencias de tests. Default: 60."
         },
         "companyStandards.securityRisks": {
           "type": "array",
@@ -531,10 +463,20 @@
           "default": "",
           "description": "ID or URL of the Confluence page that contains the project action prompts used by /project. Each H2 heading defines one action (e.g. ## agrega-redis)."
         },
-        "companyStandards.setupPage": {
+        "companyStandards.promptsPageId": {
           "type": "string",
           "default": "",
-          "description": "ID or URL of the Confluence page that contains the setup guides used by /setup. Each H2 heading defines one setup guide (e.g. ## maven, ## docker). The body is the company-specific prompt that tells the AI what steps to follow."
+          "description": "ID of the parent Confluence page whose child pages are the available prompts (used by /prompts)."
+        },
+        "companyStandards.devToolsPageId": {
+          "type": "string",
+          "default": "",
+          "description": "ID of the parent Confluence page 'Dev Tools' whose child pages are dev tool guides (used by /project)."
+        },
+        "companyStandards.standardsPageId": {
+          "type": "string",
+          "default": "",
+          "description": "ID of the parent Confluence page 'Estándares de Desarrollo' whose child pages are individual standards (used by /standards)."
         },
         "companyStandards.jiraJql": {
           "type": "string",

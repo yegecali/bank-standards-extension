@@ -2,6 +2,26 @@
 
 All notable changes to the "Company Coding Standard" extension are documented here.
 
+## [0.0.61] - 2026-04-02
+
+### Removed
+- **Slash commands removed**: `/review`, `/coverage`, `/checkstyle`, `/generate-test`, `/commit`, `/document`, `/new-feature`, `/create`, `/pr-review`, `/onboarding`, `/setup`, `/specialty` — all removed from the chat participant and routing logic.
+- **Imports cleaned up** in `bankAgent.ts`: removed unused imports for `handlePromptsCommand`, `handleNewFeatureCommand`, `handleOnboardingCommand`, `handleSetupCommand`, `handleDocumentCommand`, `handleCheckstyleCommand`, `handleReviewCommand`, `handleGenerateTestCommand`, `handleCommitCommand`, `handlePrReviewCommand`, `handleCoverageCommand`, `applyChildPageAsPrompt`, `isCreateIntent`, `createProjectFromKb`, `getStagedDiff`, and `setActiveSpecialty`.
+- **Settings removed** (only used by removed commands): `companyStandards.checkstyleConfigPath`, `companyStandards.mavenExecutable`, `companyStandards.coverageThreshold`, `companyStandards.setupPage`.
+- **`isReviewIntent` function** removed from `bankAgent.ts` (no longer used).
+
+### Changed
+- **`HELP_TEXT`** updated to show only the kept commands: `/explain`, `/security`, `/standards`, `/prompts`, `/project`, `/search`, `/docs`, `/jira`.
+- **`sampleRequests`** in `package.json` updated to reflect the active command set.
+- **`intentToCommand`** in the followup provider simplified to only map `jira`, `standards`, and `docs`.
+- **`resolvePageKey`** simplified to handle only the kept commands.
+- **`systemPrompt`** simplified — removed "IMPORTANTE: Este agente SÍ puede crear proyectos…" paragraph.
+- **`reviewInstruction` logic** simplified to only handle the `/docs` case.
+- Section numbering in `makeHandler` updated (sections 4 and 5–7 renumbered).
+
+### Added
+- **New settings** added to `package.json` (referenced in code but previously undeclared): `companyStandards.promptsPageId`, `companyStandards.devToolsPageId`, `companyStandards.standardsPageId`.
+
 ## [0.0.59] - 2026-04-01
 
 ### Removed

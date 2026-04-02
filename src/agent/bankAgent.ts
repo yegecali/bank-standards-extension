@@ -2,41 +2,27 @@ import * as vscode from "vscode";
 import { renderPrompt } from "@vscode/prompt-tsx";
 import { log, logError } from "../logger";
 import { createKnowledgeProvider } from "../knowledge/KnowledgeProviderFactory";
-import { parsePromptLibrary, blocksToMarkdown } from "../knowledge/parser";
-import { handlePromptsCommand } from "../handlers/promptLibraryHandler";
-import { handleNewFeatureCommand } from "../handlers/newFeatureHandler";
+import { blocksToMarkdown } from "../knowledge/parser";
 import { handleJiraCommand } from "../handlers/jiraHandler";
 import { handleProjectCommand } from "../handlers/projectActionHandler";
-import { handleOnboardingCommand } from "../handlers/onboardingHandler";
-import { handleSetupCommand } from "../handlers/setupHandler";
 import { handleKbSearchCommand } from "../handlers/kbSearchHandler";
 import { handleExplainCommand } from "../handlers/explainHandler";
-import { handleDocumentCommand } from "../handlers/documentHandler";
 import { handleSecurityCommand } from "../handlers/securityHandler";
-import { handleCheckstyleCommand } from "../handlers/checkstyleHandler";
-import { handleReviewCommand } from "../handlers/reviewHandler";
-import { handleGenerateTestCommand } from "../handlers/generateTestHandler";
-import { handleCommitCommand } from "../handlers/commitHandler";
-import { handlePrReviewCommand } from "../handlers/prReviewHandler";
-import { handleCoverageCommand } from "../handlers/coverageHandler";
 import {
   pickAndLoadChildPage,
-  applyChildPageAsPrompt,
   applyChildPageAsGuide,
   applyChildPageAsStandard,
   handlePromptsChildPageFlow,
 } from "../handlers/confluenceChildPageHandler";
-import { isCreateIntent, createProjectFromKb } from "./projectCreator";
-import { getStagedDiff } from "./gitHelper";
 import { BankPrompt } from "./BankPrompt";
 import {
   PageType,
   resolvePageId,
   getActiveSpecialty,
-  setActiveSpecialty,
   listSpecialties,
   detectSpecialtyFromPrompt,
 } from "./specialtyResolver";
+import { parsePromptLibrary } from "../knowledge/parser";
 
 const PARTICIPANT_ID = "companyStandards.agent";
 
@@ -105,13 +91,9 @@ export function registerBankAgent(context: vscode.ExtensionContext): void {
 
       // Remove the follow-up that matches what was just done
       const intentToCommand: Record<string, string> = {
-        project: "/create",
-        testing: "/generate-test",
-        docs: "/docs",
         jira: "/jira",
         standards: "/standards",
-        review: "/review",
-        onboarding: "/onboarding",
+        docs: "/docs",
       };
       const doneCommand = intent ? intentToCommand[intent] : undefined;
 
@@ -130,43 +112,28 @@ export function registerBankAgent(context: vscode.ExtensionContext): void {
 const HELP_TEXT = `
 # 📖 Company Coding Standard — Ayuda
 
-Soy tu agente de estándares de desarrollo. Te ayudo a escribir código correcto, entender el proyecto y gestionar tus tareas.
+Soy tu agente de estándares de desarrollo. Te ayudo a entender el proyecto, gestionar tus tareas y mantener la calidad del código.
 
 ---
 
-## 🚀 Primeros pasos
-
-| Comando | Cuándo usarlo |
-|---|---|
-| \`@company /onboarding\` | Eres nuevo en el equipo — guía completa del primer día |
-| \`@company /setup <guía>\` | Configurar tu ambiente de desarrollo (Maven, Docker, etc.) |
-| \`@company /standards\` | Ver las convenciones de nombrado y estándares de la empresa |
-
----
-
-## 💻 Desarrollo diario
+## 🔍 Análisis de proyecto
 
 | Comando | Qué hace |
 |---|---|
-| \`@company /review\` | Revisa el archivo activo contra los estándares de la empresa |
-| \`@company /generate-test\` | Genera tests unitarios para el archivo activo (patrón Triple AAA) |
-| \`@company /docs\` | Genera JSDoc/JavaDoc para el archivo activo |
-| \`@company /commit\` | Sugiere un mensaje de commit basado en tus cambios staged |
-| \`@company /pr-review\` | Revisa el diff completo de tu rama vs. main: lógica, tests, naming, bugs |
-| \`@company /prompts\` | Lista los prompts disponibles en tu base de conocimiento |
-| \`@company /prompts <nombre>\` | Aplica un prompt al archivo activo (ej: \`sonar-vulnerabilidades\`) |
+| \`@company /explain\` | Genera diagramas de secuencia Mermaid de toda la arquitectura (5 capas + validación global). Escribe en \`docs/sequence-diagrams.md\` |
+| \`@company /security\` | Escaneo de seguridad del workspace (OWASP Top 10 + riesgos configurables). Escribe en \`docs/security-report.md\` |
 
 ---
 
-## 🏗️ Proyecto
+## 📚 Conocimiento y estándares
 
 | Comando | Qué hace |
 |---|---|
-| \`@company /create\` | Genera un proyecto nuevo desde tu plantilla (Maven + Quarkus) |
-| \`@company /project\` | Lista las acciones de proyecto disponibles |
-| \`@company /project <acción>\` | Ejecuta una acción sobre el proyecto (ej: \`agrega-redis\`, \`agrega-client-rest\`) |
-| \`@company /new-feature\` | Flujo guiado: selecciona historia de Jira → planifica → implementa |
-| \`@company /coverage\` | Ejecuta mvn test y analiza la cobertura JaCoCo — muestra clases bajo umbral + sugerencias |
+| \`@company /standards\` | Consulta estándares de desarrollo desde Confluence (selector interactivo) |
+| \`@company /prompts\` | Biblioteca de prompts — lista subpáginas de Confluence, muestra preview y aplica al archivo activo |
+| \`@company /project\` | Guías de herramientas de desarrollo (dev tools) desde Confluence |
+| \`@company /search <pregunta>\` | Búsqueda semántica en la base de conocimiento |
+| \`@company /docs\` | Genera JSDoc/JavaDoc para el archivo activo siguiendo los estándares de documentación |
 
 ---
 
@@ -189,7 +156,6 @@ Soy tu agente de estándares de desarrollo. Te ayudo a escribir código correcto
   "companyStandards.specialtiesMap": {
     "backend": {
       "standards": "<id-de-pagina>",
-      "testing":   "<id-de-pagina>",
       "project":   "<id-de-pagina>",
       "prompts":   "<id-de-pagina>"
     }
@@ -197,21 +163,9 @@ Soy tu agente de estándares de desarrollo. Te ayudo a escribir código correcto
   "companyStandards.jiraUrl":         "https://tuempresa.atlassian.net",
   "companyStandards.jiraEmail":       "tu@empresa.com",
   "companyStandards.jiraToken":       "tu-api-token",
-  "companyStandards.jiraProject":     ["BANK"],
-  "companyStandards.setupPage":       "<id-pagina-setup>",
-  "companyStandards.projectActionsPage": "<id-pagina-acciones>"
+  "companyStandards.jiraProject":     ["BANK"]
 }
 \`\`\`
-
----
-
-## 💡 Tips
-
-- Escribe \`@company\` + espacio para ver sugerencias de comandos
-- Los comandos \`/review\`, \`/generate-test\`, \`/docs\` y \`/commit\` usan el archivo que tienes **abierto y activo** en el editor
-- \`/jira\` usa QuickPick — no necesitas escribir argumentos, todo es guiado
-- Las operaciones pesadas (\`/explain\`, \`/document\`, \`/security\`, \`/checkstyle\`) procesan el proyecto completo en lotes
-- Si eres nuevo, empieza con \`@company /onboarding\`
 `.trim();
 
 // ─── Request handler ────────────────────────────────────────────────────────
@@ -239,21 +193,10 @@ function makeHandler(
       return { metadata: { intent: "help" } };
     }
 
-    // 0 — Handle /specialty command
-    if (request.command === "specialty") {
-      return handleSpecialtyCommand(userPrompt, stream);
-    }
-
     // 0a0 — Handle /explain command
     if (request.command === "explain") {
       await handleExplainCommand(stream, request.model, token);
       return { metadata: { intent: "explain" } };
-    }
-
-    // 0a0b — Handle /document command
-    if (request.command === "document") {
-      await handleDocumentCommand(stream, request.model, token);
-      return { metadata: { intent: "document" } };
     }
 
     // 0a0c — Handle /security command
@@ -262,107 +205,10 @@ function makeHandler(
       return { metadata: { intent: "security" } };
     }
 
-    // 0a0d — Handle /checkstyle command
-    if (request.command === "checkstyle") {
-      await handleCheckstyleCommand(stream, request.model, token);
-      return { metadata: { intent: "checkstyle" } };
-    }
-
-    // 0a0e — Handle /review command
-    if (request.command === "review") {
-      const activeSpecialty = getActiveSpecialty();
-      await handleReviewCommand(stream, request.model, activeSpecialty, token);
-      return { metadata: { intent: "review", specialty: activeSpecialty } };
-    }
-
-    // 0a0f — Handle /generate-test command
-    if (request.command === "generate-test") {
-      const activeSpecialty = getActiveSpecialty();
-      await handleGenerateTestCommand(
-        stream,
-        request.model,
-        activeSpecialty,
-        token,
-      );
-      return { metadata: { intent: "testing", specialty: activeSpecialty } };
-    }
-
-    // 0a0g — Handle /commit command
-    if (request.command === "commit") {
-      await handleCommitCommand(stream, request.model, token);
-      return { metadata: { intent: "commit" } };
-    }
-
-    // 0a0h — Handle /pr-review command
-    if (request.command === "pr-review") {
-      await handlePrReviewCommand(stream, request.model, token);
-      return { metadata: { intent: "pr-review" } };
-    }
-
-    // 0a0i — Handle /coverage command
-    if (request.command === "coverage") {
-      await handleCoverageCommand(stream, request.model, token);
-      return { metadata: { intent: "coverage" } };
-    }
-
     // 0a1 — Handle /search command
     if (request.command === "search") {
       await handleKbSearchCommand(userPrompt, stream, request.model, token);
       return { metadata: { intent: "search" } };
-    }
-
-    // 0a2 — Handle /onboarding command
-    if (request.command === "onboarding") {
-      await handleOnboardingCommand(stream, request.model, token);
-      return { metadata: { intent: "onboarding" } };
-    }
-
-    // 0a3 — Handle /setup command
-    if (request.command === "setup") {
-      const config = vscode.workspace.getConfiguration("companyStandards");
-      const setupPage = (config.get<string>("setupPage") ?? "").trim();
-
-      if (!setupPage) {
-        stream.markdown(
-          `⚠️ Configura \`companyStandards.setupPage\` con el ID o URL de la página de Confluence ` +
-            `que contiene tus guías de setup.\n\n` +
-            `Cada encabezado H2 define una guía. Ejemplo:\n\n` +
-            "```markdown\n" +
-            `## maven\n` +
-            `Antes de compilar el proyecto Maven necesitas:\n` +
-            `1. Descargar los certificados corporativos.\n` +
-            `2. Importarlos al cacert de Java con keytool.\n` +
-            `3. Configurar el settings.xml de Maven.\n` +
-            `4. Ejecutar mvn clean install.\n\n` +
-            `## docker\n` +
-            `Para levantar con Docker Compose...\n` +
-            "```",
-        );
-        return { metadata: { intent: "setup" } };
-      }
-
-      stream.progress("Cargando guías de setup…");
-      try {
-        const provider = createKnowledgeProvider();
-        const page = await provider.getPage(setupPage);
-        const templates = parsePromptLibrary(page.blocks);
-        log(
-          `[BankAgent] /setup — ${templates.length} guides from "${setupPage}"`,
-        );
-        await handleSetupCommand(
-          userPrompt,
-          templates,
-          stream,
-          request.model,
-          token,
-          page.title,
-        );
-      } catch (err: unknown) {
-        logError("[BankAgent] /setup — failed to load setup page", err);
-        const msg = err instanceof Error ? err.message : String(err);
-        stream.markdown(`❌ No pude cargar la página de setup: **${msg}**`);
-      }
-      return { metadata: { intent: "setup" } };
     }
 
     // 0b — Handle /jira command (early-exit — Jira issues manager)
@@ -375,22 +221,6 @@ function makeHandler(
         request.model,
       );
       return { metadata: { intent: "jira" } };
-    }
-
-    // 0c — Handle /new-feature command (early-exit — uses Jira, not knowledge base)
-    if (request.command === "new-feature") {
-      const activeSpecialty = getActiveSpecialty();
-      await handleNewFeatureCommand(
-        userPrompt,
-        stream,
-        request.model,
-        context,
-        activeSpecialty,
-        token,
-      );
-      return {
-        metadata: { intent: "new-feature", specialty: activeSpecialty },
-      };
     }
 
     // 0d — Handle /project command (early-exit)
@@ -557,37 +387,8 @@ function makeHandler(
       return { metadata: { intent: pageKey, specialty } };
     }
 
-    // 4a — If testing/generate-test intent, read the active editor file
-    // Trigger on explicit /review or /generate-test command OR keyword-based review intent
+    // 4 — /docs: read active file to generate documentation
     let activeFileContext = "";
-    if (
-      pageKey === "testing" &&
-      (request.command === "review" ||
-        request.command === "generate-test" ||
-        isReviewIntent(userPrompt))
-    ) {
-      const editor = vscode.window.activeTextEditor;
-      if (!editor) {
-        stream.markdown(
-          "⚠️ No hay ningún archivo abierto en el editor.\n\n" +
-            "Abre el archivo de test que quieres revisar y vuelve a ejecutar el comando.",
-        );
-        return { metadata: { intent: pageKey, specialty } };
-      }
-      const fileName = editor.document.fileName.split("/").pop() ?? "archivo";
-      const fileContent = editor.document.getText();
-      const langId = editor.document.languageId;
-      log(
-        `[BankAgent] Reading active file: ${fileName} (${langId}), ${fileContent.length} chars`,
-      );
-      stream.progress(`Leyendo archivo "${fileName}"…`);
-
-      activeFileContext =
-        `\n\n---\n## Archivo a revisar: \`${fileName}\`\n` +
-        `\`\`\`${langId}\n${fileContent}\n\`\`\``;
-    }
-
-    // 4a2 — /docs: read active file to generate documentation
     if (request.command === "docs") {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
@@ -609,55 +410,7 @@ function makeHandler(
         `\`\`\`${langId}\n${fileContent}\n\`\`\``;
     }
 
-    // 4a3 — /commit: get staged git diff
-    if (request.command === "commit") {
-      const diff = getStagedDiff();
-      if (!diff) {
-        stream.markdown(
-          "⚠️ No hay cambios staged.\n\n" +
-            "Añade archivos con `git add` antes de ejecutar este comando.",
-        );
-        return { metadata: { intent: pageKey, specialty } };
-      }
-      log(`[BankAgent] /commit — Staged diff: ${diff.length} chars`);
-      stream.progress(
-        "Analizando cambios staged para sugerir mensaje de commit…",
-      );
-      activeFileContext =
-        `\n\n---\n## Cambios staged (git diff --cached)\n` +
-        `\`\`\`diff\n${diff}\n\`\`\``;
-    }
-
-    // 4b — Create project intent → generate files directly (no LLM needed)
-    // Trigger on explicit /create command OR keyword-based create intent
-    if (
-      pageKey === "project" &&
-      (request.command === "create" || isCreateIntent(userPrompt))
-    ) {
-      log("[BankAgent] Create intent detected — generating project files");
-      stream.progress("Preparando generación del proyecto…");
-
-      const provider = createKnowledgeProvider();
-      const page = await provider.getPage(pageId);
-      const result = await createProjectFromKb(page.blocks, stream);
-
-      if (result) {
-        stream.markdown(
-          `## ✅ Proyecto creado\n\n` +
-            `**Carpeta:** \`${result.folder}\`\n\n` +
-            `**Archivos generados (${result.files.length}):**\n` +
-            result.files.map((f) => `- \`${f}\``).join("\n") +
-            `\n\n> Ejecuta \`mvn quarkus:dev\` para levantar el servidor.`,
-        );
-        stream.button({
-          title: "Abrir carpeta del proyecto",
-          command: "vscode.openFolder",
-        });
-      }
-      return { metadata: { intent: pageKey, specialty } };
-    }
-
-    // 4 — Build token-aware prompt via prompt-tsx
+    // 5 — Build token-aware prompt via prompt-tsx
     const model = request.model;
     log(
       `[BankAgent] Using model: ${model.name} (${model.id}), max tokens: ${model.maxInputTokens}`,
@@ -666,36 +419,14 @@ function makeHandler(
     const systemPrompt =
       `Eres un agente de estándares de la compañía integrado en VSCode. Tienes acceso a la documentación oficial ` +
       `del banco almacenada en Confluence. Responde SOLO basándote en el contenido de la documentación proporcionada. ` +
-      `IMPORTANTE: Este agente SÍ puede crear proyectos y generar archivos en disco automáticamente. ` +
-      `Cuando el usuario pida crear, generar o inicializar un proyecto, dile que el agente lo generará ` +
-      `y que debe seleccionar la carpeta destino en el diálogo que aparecerá. ` +
-      `Nunca digas que no puedes crear proyectos. ` +
       `Usa formato Markdown en tus respuestas. Responde en el mismo idioma que el usuario.`;
 
     let reviewInstruction = "";
-    if (activeFileContext) {
-      if (request.command === "generate-test") {
-        reviewInstruction =
-          `\nGenera tests unitarios completos para el archivo adjunto siguiendo los estándares de testing de la documentación. ` +
-          `Incluye: imports necesarios, clase de test, métodos de test con patrón AAA (Arrange/Act/Assert), ` +
-          `y al menos un caso por método público. Usa el mismo lenguaje que el archivo fuente.`;
-      } else if (request.command === "docs") {
-        reviewInstruction =
-          `\nAgrega comentarios JSDoc/JavaDoc al archivo adjunto siguiendo los estándares de la documentación. ` +
-          `Documenta únicamente métodos y clases públicos. No modifiques la lógica del código. ` +
-          `Devuelve el archivo completo con los comentarios añadidos.`;
-      } else if (request.command === "commit") {
-        reviewInstruction =
-          `\nA partir de los cambios staged adjuntos y los estándares de la documentación, ` +
-          `genera un mensaje de commit en formato Conventional Commits (type(scope): description). ` +
-          `Incluye: tipo (feat/fix/refactor/docs/test/chore), scope opcional, descripción corta en el idioma del usuario, ` +
-          `y un cuerpo explicando el "por qué" si los cambios son complejos.`;
-      } else {
-        reviewInstruction =
-          `\nAnaliza el archivo adjunto línea por línea contra los estándares de la compañía. ` +
-          `Lista cada violación encontrada con: número de línea, problema y corrección sugerida. ` +
-          `Al final muestra un resumen con ✅ si cumple o ❌ si no cumple cada regla del checklist.`;
-      }
+    if (activeFileContext && request.command === "docs") {
+      reviewInstruction =
+        `\nAgrega comentarios JSDoc/JavaDoc al archivo adjunto siguiendo los estándares de la documentación. ` +
+        `Documenta únicamente métodos y clases públicos. No modifiques la lógica del código. ` +
+        `Devuelve el archivo completo con los comentarios añadidos.`;
     }
 
     const { messages } = await renderPrompt(
@@ -715,7 +446,7 @@ function makeHandler(
 
     log(`[BankAgent] Rendered ${messages.length} messages for LLM`);
 
-    // 5 — Stream response
+    // 6 — Stream response
     stream.markdown(
       `> 📖 Basado en **${pageTitle}** · especialidad: **${specialty}**\n\n`,
     );
@@ -739,7 +470,7 @@ function makeHandler(
 
     log(`[BankAgent] ── request complete ─────────────────────────────`);
 
-    // 6 — Action buttons after response
+    // 7 — Action buttons after response
     stream.button({
       title: "Actualizar estándares",
       command: "companyStandards.refreshStandards",
@@ -751,78 +482,10 @@ function makeHandler(
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-/**
- * Handles the /specialty command:
- * - No arg → list available specialties + show active one
- * - Arg matches known specialty → switch to it
- * - Arg not found → show error with available options
- */
-async function handleSpecialtyCommand(
-  userArg: string,
-  stream: vscode.ChatResponseStream,
-): Promise<vscode.ChatResult> {
-  const knownSpecialties = listSpecialties();
-  const active = getActiveSpecialty();
-  const arg = userArg.trim().toLowerCase();
-
-  if (!arg) {
-    // List mode
-    if (knownSpecialties.length === 0) {
-      stream.markdown(
-        `No hay especialidades configuradas aún.\n\n` +
-          `Añade entradas en \`companyStandards.specialtiesMap\` en tus settings.\n\n` +
-          `**Ejemplo:**\n` +
-          `\`\`\`json\n` +
-          `"companyStandards.specialtiesMap": {\n` +
-          `  "backend":  { "standards": "<id>", "testing": "<id>", "project": "<id>", "prompts": "<id>" },\n` +
-          `  "frontend": { "standards": "<id>", "testing": "<id>" },\n` +
-          `  "qa":       { "testing": "<id>", "prompts": "<id>" }\n` +
-          `}\n\`\`\``,
-      );
-    } else {
-      const rows = knownSpecialties
-        .map((s) => `| ${s} | ${s === active ? "✅ activa" : ""} |`)
-        .join("\n");
-      stream.markdown(
-        `## Especialidades disponibles\n\n` +
-          `| Especialidad | Estado |\n|---|---|\n${rows}\n\n` +
-          `**Activa:** \`${active}\`\n\n` +
-          `Para cambiar: \`@bank /specialty <nombre>\``,
-      );
-    }
-    return { metadata: { intent: "specialty" } };
-  }
-
-  // Switch mode
-  const match = knownSpecialties.find((s) => s.toLowerCase() === arg);
-  if (!match) {
-    const options = knownSpecialties.length
-      ? knownSpecialties.map((s) => `\`${s}\``).join(", ")
-      : "ninguna configurada aún";
-    stream.markdown(
-      `❌ Especialidad **"${arg}"** no encontrada.\n\n` +
-        `Disponibles: ${options}`,
-    );
-    return { metadata: { intent: "specialty" } };
-  }
-
-  await setActiveSpecialty(match);
-  stream.markdown(
-    `✅ Especialidad cambiada a **${match}**.\n\n` +
-      `A partir de ahora usaré la documentación de **${match}** para todas las consultas.`,
-  );
-  return { metadata: { intent: "specialty" } };
-}
-
 function resolvePageKey(command: string | undefined, prompt: string): string {
   if (command === "standards") return "standards";
-  if (command === "review") return "testing";
-  if (command === "generate-test") return "testing";
-  if (command === "create") return "project";
-  if (command === "prompts") return "prompts";
   if (command === "docs") return "standards";
-  if (command === "commit") return "standards";
-  if (command === "new-feature") return "standards";
+  if (command === "prompts") return "prompts";
   if (command === "jira") return "standards";
   return detectIntent(prompt);
 }
@@ -878,11 +541,4 @@ function detectIntent(prompt: string): string {
   if (standardsKeywords.some((k) => lower.includes(k))) return "standards";
   if (projectKeywords.some((k) => lower.includes(k))) return "project";
   return "project";
-}
-
-function isReviewIntent(prompt: string): boolean {
-  const lower = prompt.toLowerCase();
-  return /\b(revisa|review|analiza|analiz[ae]|valida|verifica|cumple|este test|este archivo|el archivo|the file)\b/.test(
-    lower,
-  );
 }
