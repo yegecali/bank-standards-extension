@@ -10,7 +10,7 @@ npm run watch        # TypeScript watch mode for development
 npm run bundle       # Production build via esbuild (minified CJS → out/extension.js)
 npm run lint         # ESLint on src/
 npm test             # Jest (all tests)
-npx jest --testPathPattern=validator  # Run a single test file by pattern
+npx jest --testPathPattern=parser  # Run a single test file by pattern
 ```
 
 Tests run with `testEnvironment: node`; VSCode is mocked at `src/test/__mocks__/vscode.ts`.
@@ -19,16 +19,24 @@ Tests run with `testEnvironment: node`; VSCode is mocked at `src/test/__mocks__/
 
 ### Entry Point
 
-`src/extension.ts` registers all providers and the chat participant on `onStartupFinished`:
-- `DiagnosticProvider` — inline naming-convention warnings (300ms debounce)
-- `BankStandardsCodeActionProvider` — quick-fix lightbulbs
-- `StatusBarProvider` — shows active knowledge source
+`src/extension.ts` registers the chat participant on `onStartupFinished`:
 - `registerBankAgent()` — registers the `@company` chat participant
 - LM Tools: `GetStandardsTool`, `ReviewTestTool`, `CreateProjectTool`
 
 ### Chat Participant & Command Routing
 
-`src/agent/bankAgent.ts` is the core. All 22 slash commands (`/review`, `/jira`, `/generate-test`, `/commit`, `/new-feature`, `/pr-review`, `/coverage`, `/checkstyle`, `/security`, `/document`, `/explain`, `/search`, `/prompts`, `/specialty`, `/standards`, `/create`, `/project`, `/docs`, `/onboarding`, `/setup`, `/help`) route through `makeHandler()`, which dispatches to individual handlers in `src/handlers/`.
+`src/agent/bankAgent.ts` is the core. All 9 slash commands (`/help`, `/standards`, `/prompts`, `/docs`, `/jira`, `/project`, `/search`, `/explain`, `/security`) route through `makeHandler()`, which dispatches to individual handlers in `src/handlers/`.
+
+**Command Details:**
+- `/help` — Shows all available commands and usage
+- `/standards <page-id>` — Lists coding standards; accepts Confluence page ID as argument or uses `standardsPageId` setting. Uses `looksLikePageId()` to detect if user provided an ID vs natural language
+- `/prompts [name]` — Lists available prompts or applies one by name
+- `/docs` — Generates JSDoc/JavaDoc for active file following bank documentation standards
+- `/jira [query]` — Manages Jira issues: list stories, view/create subtasks, update documentation
+- `/project <page-id>` — Lists dev tool guides; accepts Confluence page ID as argument or uses `devToolsPageId` setting. Same `looksLikePageId()` detection as `/standards`
+- `/search <question>` — Searches knowledge base (Confluence) with natural language; Copilot responds based on results
+- `/explain` — Analyzes project architecture and generates sequence diagrams (Mermaid) for endpoints; traces controller → services → repositories/gateways. Writes to `docs/sequence-diagrams.md`
+- `/security` — Scans project for vulnerabilities (OWASP Top 10 + configurable risks); generates detailed report to `docs/security-report.md`
 
 Handler signature convention:
 ```typescript
@@ -45,14 +53,12 @@ All output goes to `stream.markdown()` / `stream.progress()` — no return value
 
 `src/knowledge/KnowledgeProvider.ts` defines the provider interface returning `KnowledgePage { id, title, blocks: KnowledgeBlock[] }`.
 
-`src/knowledge/KnowledgeProviderFactory.ts` is a singleton factory that returns either:
-- `NotionKnowledgeProvider` → Notion REST API v1 (`src/notion/client.ts`)
+`src/knowledge/KnowledgeProviderFactory.ts` is a singleton factory that returns:
 - `ConfluenceKnowledgeProvider` → Confluence REST API v2 (`src/confluence/client.ts`)
 
-Cache invalidates when `knowledgeSource`, `notionToken`, or `confluenceToken` settings change.
+Cache invalidates when `confluenceUrl`, `confluenceEmail`, or `confluenceToken` settings change.
 
-Parsed output from `src/notion/parser.ts`:
-- `parseNamingRules()` → `NamingRule[]`
+Parsed output from `src/knowledge/parser.ts`:
 - `parseProjectSteps()` → `ProjectStep[]`
 - `parsePromptLibrary()` → `PromptTemplate[]`
 - `blocksToMarkdown()` → `string`
@@ -82,7 +88,7 @@ Active specialty stored in `companyStandards.specialty`; auto-detected from prom
 
 ### Workspace Context (Batch Processing)
 
-Large handlers (`/document`, `/security`, `/explain`, `/coverage`, `/pr-review`) scan workspace files. Key constants from `src/config/defaults.ts`:
+Large handlers (`/security`, `/explain`) scan workspace files in batches. Key constants from `src/config/defaults.ts`:
 - `SRC_EXTENSIONS`: `.java .ts .kt .py .cs .go .js`
 - `BATCH.FILES_PER_BATCH = 4`, `BATCH.MAX_FILES = 100`, `BATCH.MAX_CHARS_FILE = 4500`
 
@@ -91,9 +97,12 @@ Complex handlers use a two-iteration pattern: iteration 1 generates raw content,
 ### External Integrations
 
 - **Jira** (`src/jira/client.ts`) — Basic Auth; methods: `listIssues`, `getIssue`, `getSubtasks`, `createSubtask`, `searchByJql`
-- **Git** (`src/agent/gitHelper.ts`) — `getStagedDiff()` runs `git diff --cached` for `/commit`
 - **Copilot LM Tools** (`src/agent/tools/`) — available in Copilot agent mode without explicit `@company`
 
 ### Settings Prefix
 
-All settings use `companyStandards.*`. Key ones: `knowledgeSource`, `notionToken`, `confluenceUrl/Email/Token/SpaceKey`, `jiraUrl/Email/Token/Project`, `specialty`, `specialtiesMap`, `namingRules`, `coverageThreshold`.
+All settings use `companyStandards.*`. Key ones:
+- **Confluence**: `confluenceUrl`, `confluenceEmail`, `confluenceToken`, `confluenceSpaceKey`
+- **Jira**: `jiraUrl`, `jiraEmail`, `jiraToken`, `jiraProject`, `jiraJql`, `subtaskAgeThresholdHours`
+- **Knowledge Base**: `standardsPageId`, `devToolsPageId`, `promptsPageId`, `specialty`, `specialtiesMap`
+- **Security**: `securityRisks`, `iriusriskReportPath` (threat model report from IriusRisk tool)
