@@ -24,6 +24,7 @@ import {
   applyChildPageAsPrompt,
   applyChildPageAsGuide,
   applyChildPageAsStandard,
+  handlePromptsChildPageFlow,
 } from "../handlers/confluenceChildPageHandler";
 import { isCreateIntent, createProjectFromKb } from "./projectCreator";
 import { getStagedDiff } from "./gitHelper";
@@ -454,6 +455,43 @@ function makeHandler(
       return { metadata: { intent: "project" } };
     }
 
+    // 0e — Handle /prompts command (early-exit)
+    // Uses promptsPageId (or specialtiesMap.prompts) as parent page; child pages = prompts
+    if (request.command === "prompts") {
+      const cfg           = vscode.workspace.getConfiguration("companyStandards");
+      const promptsParent = (cfg.get<string>("promptsPageId") ?? "").trim()
+                         || (resolvePageId("prompts") ?? "");
+
+      if (!promptsParent) {
+        stream.markdown(
+          `⚠️ Configura \`companyStandards.promptsPageId\` con el ID de la página padre **"Prompts"** en Confluence.\n\n` +
+          `Cada subpágina de esa página es un prompt seleccionable.`
+        );
+        return { metadata: { intent: "prompts" } };
+      }
+
+      const provider = createKnowledgeProvider();
+      await handlePromptsChildPageFlow(promptsParent, userPrompt, stream, request.model, token, provider);
+      return { metadata: { intent: "prompts" } };
+    }
+
+    // 0f — Handle /standards command (early-exit)
+    // Uses standardsPageId as parent page; child pages = individual standards
+    if (request.command === "standards") {
+      const cfg           = vscode.workspace.getConfiguration("companyStandards");
+      const standardsPage = (cfg.get<string>("standardsPageId") ?? "").trim();
+
+      if (standardsPage) {
+        const provider = createKnowledgeProvider();
+        const picked   = await pickAndLoadChildPage(standardsPage, "Estándares de Desarrollo", stream, provider);
+        if (picked) {
+          await applyChildPageAsStandard(picked.title, picked.markdown, userPrompt, stream, request.model, token);
+        }
+        return { metadata: { intent: "standards" } };
+      }
+      // No standardsPageId set — fall through to legacy knowledge-page flow
+    }
+
     // 1 — Detect specialty: prompt mention > active setting
     const knownSpecialties = listSpecialties();
     const promptSpecialty = detectSpecialtyFromPrompt(
@@ -616,28 +654,6 @@ function makeHandler(
           command: "vscode.openFolder",
         });
       }
-      return { metadata: { intent: pageKey, specialty } };
-    }
-
-    // 4c — Prompt library: list or apply a saved prompt from knowledge source
-    if (pageKey === "prompts") {
-      const provider = createKnowledgeProvider();
-      const page = await provider.getPage(pageId);
-      const templates = parsePromptLibrary(page.blocks);
-      log(`[BankAgent] Prompt library loaded: ${templates.length} prompts`);
-
-      await handlePromptsCommand(
-        userPrompt,
-        templates,
-        stream,
-        request.model,
-        token,
-        pageTitle,
-      );
-      stream.button({
-        title: "Actualizar biblioteca de prompts",
-        command: "companyStandards.refreshStandards",
-      });
       return { metadata: { intent: pageKey, specialty } };
     }
 
