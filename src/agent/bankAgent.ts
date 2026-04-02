@@ -64,43 +64,23 @@ export function registerBankAgent(context: vscode.ExtensionContext): void {
       // Context-aware: suggest the most relevant next actions based on what was just done
       const all: vscode.ChatFollowup[] = [
         {
-          prompt: "/create",
-          label: "$(file-directory) Crear nuevo proyecto",
+          prompt: "/explain",
+          label: "Documentar flujos y diagramas de secuencia",
           participant: PARTICIPANT_ID,
         },
         {
-          prompt: "/generate-test",
-          label: "$(beaker) Agregar tests al archivo activo",
-          participant: PARTICIPANT_ID,
-        },
-        {
-          prompt: "/docs",
-          label: "$(book) Agregar documentación",
+          prompt: "/search",
+          label: "Buscar información en la base de conocimiento",
           participant: PARTICIPANT_ID,
         },
         {
           prompt: "/jira subtasks",
-          label: "$(list-tree) Ver mis subtareas",
+          label: "Ver mis subtareas en Jira",
           participant: PARTICIPANT_ID,
         },
         {
-          prompt: "/review",
-          label: "$(search) Revisar archivo activo",
-          participant: PARTICIPANT_ID,
-        },
-        {
-          prompt: "/standards",
-          label: "$(symbol-ruler) Ver estándares de nomenclatura",
-          participant: PARTICIPANT_ID,
-        },
-        {
-          prompt: "/project",
-          label: "$(gear) Acciones de proyecto",
-          participant: PARTICIPANT_ID,
-        },
-        {
-          prompt: "/jira",
-          label: "$(issue-opened) Ver issues en progreso",
+          prompt: "/security",
+          label: "Análisis de seguridad del proyecto",
           participant: PARTICIPANT_ID,
         },
       ];
