@@ -526,6 +526,15 @@ function detectIntent(prompt: string): string {
     "junit",
     "spec",
   ];
+  const docsKeywords = [
+    "documenta",
+    "documentation",
+    "jsdoc",
+    "javadoc",
+    "comentarios",
+    "comments",
+    "docstring",
+  ];
   const standardsKeywords = [
     "standard",
     "naming",
@@ -543,14 +552,11 @@ function detectIntent(prompt: string): string {
     "quarkus",
     "crear",
     "create",
-    "controller",
-    "contrato",
-    "contract",
-    "openapi",
     "scaffold",
   ];
 
   if (testingKeywords.some((k) => lower.includes(k))) return "testing";
+  if (docsKeywords.some((k) => lower.includes(k))) return "docs";
   if (standardsKeywords.some((k) => lower.includes(k))) return "standards";
   if (projectKeywords.some((k) => lower.includes(k))) return "project";
   return "project";
