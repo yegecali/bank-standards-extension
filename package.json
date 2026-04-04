@@ -300,6 +300,11 @@
           "default": "",
           "description": "ID of the parent Confluence page whose child pages are the available prompts (used by /prompts)."
         },
+        "companyStandards.interactivePromptMarker": {
+          "type": "string",
+          "default": "--- ESPERA RESPUESTA ---",
+          "description": "Marker string that indicates an interactive prompt (multi-turn dialogue). When a prompt contains this marker, the LLM will guide step-by-step interaction. Leave empty to disable interactive prompts. You can customize this to match your Confluence conventions."
+        },
         "companyStandards.devToolsPageId": {
           "type": "string",
           "default": "",

@@ -104,5 +104,5 @@ Complex handlers use a two-iteration pattern: iteration 1 generates raw content,
 All settings use `companyStandards.*`. Key ones:
 - **Confluence**: `confluenceUrl`, `confluenceEmail`, `confluenceToken`, `confluenceSpaceKey`
 - **Jira**: `jiraUrl`, `jiraEmail`, `jiraToken`, `jiraProject`, `jiraJql`, `subtaskAgeThresholdHours`
-- **Knowledge Base**: `standardsPageId`, `devToolsPageId`, `promptsPageId`, `specialty`, `specialtiesMap`
+- **Knowledge Base**: `standardsPageId`, `devToolsPageId`, `promptsPageId`, `specialty`, `specialtiesMap`, `interactivePromptMarker`
 - **Security**: `securityRisks`, `iriusriskReportPath` (threat model report from IriusRisk tool)

@@ -228,8 +228,12 @@ export async function applyChildPageAsPrompt(
 
   stream.markdown(`> 🎯 Prompt: **${pageTitle}**${fileName ? ` · archivo: \`${fileName}\`` : ""}\n\n`);
 
-  // Check if this is an interactive prompt (contains "--- ESPERA RESPUESTA ---")
-  const isInteractive = pageMarkdown.includes("--- ESPERA RESPUESTA ---");
+  // Read interactive prompt marker from settings (default: "--- ESPERA RESPUESTA ---")
+  const config = vscode.workspace.getConfiguration("companyStandards");
+  const interactiveMarker = config.get<string>("interactivePromptMarker") || "";
+
+  // Check if this is an interactive prompt (contains the configured marker)
+  const isInteractive = interactiveMarker && pageMarkdown.includes(interactiveMarker);
 
   let userMessage = pageMarkdown;
   if (userArg) {
@@ -241,7 +245,7 @@ export async function applyChildPageAsPrompt(
 
   // If interactive, add instruction to handle multi-turn flow within single request
   if (isInteractive) {
-    userMessage = `Eres un asistente de documentación interactivo. Responde a las preguntas marcadas con "--- ESPERA RESPUESTA ---" paso a paso.
+    userMessage = `Eres un asistente de documentación interactivo. Responde a las preguntas marcadas con "${interactiveMarker}" paso a paso.
 Para cada pregunta:
 1. Muestra la pregunta
 2. Espera mi respuesta en tu respuesta anterior (el usuario responderá)
