@@ -187,6 +187,7 @@ function makeHandler(
     );
     log(`[BankAgent] model   : ${request.model?.id ?? "(unknown)"}`);
 
+
     // 0 — Handle /help command
     if (request.command === "help") {
       stream.markdown(HELP_TEXT);
@@ -304,7 +305,7 @@ function makeHandler(
       }
 
       const provider = createKnowledgeProvider();
-      await handlePromptsChildPageFlow(promptsParent, userPrompt, stream, request.model, token, provider);
+      await handlePromptsChildPageFlow(promptsParent, userPrompt, stream, request.model, token, provider, chatContext);
       return { metadata: { intent: "prompts" } };
     }
 

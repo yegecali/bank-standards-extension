@@ -83,7 +83,10 @@ export async function pickAndLoadChildPage(
  * 1. QuickPick — lists child pages of the prompts parent with descriptions
  * 2. Loads the selected page and shows a brief preview in the chat
  * 3. InputBox — asks the user what they want to request with this prompt
- * 4. Applies: prompt content + user context + active file → LLM
+ * 4. Applies: prompt content + user context + active file + chat history → LLM
+ *
+ * For interactive prompts (containing "--- ESPERA RESPUESTA ---"), the chat context
+ * is passed to the LLM so it can reference the full conversation history.
  */
 export async function handlePromptsChildPageFlow(
   parentPageId: string,
@@ -91,7 +94,8 @@ export async function handlePromptsChildPageFlow(
   stream: vscode.ChatResponseStream,
   model: vscode.LanguageModelChat,
   token: vscode.CancellationToken,
-  provider: KnowledgeProvider
+  provider: KnowledgeProvider,
+  chatContext?: vscode.ChatContext
 ): Promise<void> {
   if (!provider.getChildPages) {
     stream.markdown(
@@ -175,7 +179,7 @@ export async function handlePromptsChildPageFlow(
   }
 
   // ── 6. Apply prompt ────────────────────────────────────────────────────────
-  await applyChildPageAsPrompt(picked.label, pageMarkdown, userContext.trim(), stream, model, token);
+  await applyChildPageAsPrompt(picked.label, pageMarkdown, userContext.trim(), stream, model, token, chatContext);
 }
 
 /** Extracts the first meaningful paragraph from markdown for the preview */
@@ -192,6 +196,9 @@ function extractPreview(markdown: string): string {
 /**
  * Applies the selected prompt page against the active editor file.
  * Used by /prompts with child-page flow.
+ *
+ * If the prompt contains "--- ESPERA RESPUESTA ---", it supports interactive multi-turn dialogue
+ * via chat context (user responds with @company in the next message).
  */
 export async function applyChildPageAsPrompt(
   pageTitle: string,
@@ -199,7 +206,8 @@ export async function applyChildPageAsPrompt(
   userArg: string,
   stream: vscode.ChatResponseStream,
   model: vscode.LanguageModelChat,
-  token: vscode.CancellationToken
+  token: vscode.CancellationToken,
+  chatContext?: vscode.ChatContext
 ): Promise<void> {
   const resolvedModel = await resolveModel(model, stream);
   if (!resolvedModel) { return; }
@@ -220,11 +228,33 @@ export async function applyChildPageAsPrompt(
 
   stream.markdown(`> 🎯 Prompt: **${pageTitle}**${fileName ? ` · archivo: \`${fileName}\`` : ""}\n\n`);
 
-  const msg = vscode.LanguageModelChatMessage.User(
-    pageMarkdown +
-    (userArg ? `\n\nContexto adicional: ${userArg}` : "") +
-    fileContext
-  );
+  // Check if this is an interactive prompt (contains "--- ESPERA RESPUESTA ---")
+  const isInteractive = pageMarkdown.includes("--- ESPERA RESPUESTA ---");
+
+  let userMessage = pageMarkdown;
+  if (userArg) {
+    userMessage += `\n\nContexto adicional: ${userArg}`;
+  }
+  if (fileContext) {
+    userMessage += fileContext;
+  }
+
+  // If interactive, add instruction to handle multi-turn flow within single request
+  if (isInteractive) {
+    userMessage = `Eres un asistente de documentación interactivo. Responde a las preguntas marcadas con "--- ESPERA RESPUESTA ---" paso a paso.
+Para cada pregunta:
+1. Muestra la pregunta
+2. Espera mi respuesta en tu respuesta anterior (el usuario responderá)
+3. Continúa con la siguiente pregunta
+
+Aquí está el flujo:
+
+${userMessage}
+
+Comienza mostrando la primera pregunta y explicando qué necesitas de mi respuesta.`;
+  }
+
+  const msg = vscode.LanguageModelChatMessage.User(userMessage);
 
   try {
     const resp = await resolvedModel.sendRequest([msg], {}, token);

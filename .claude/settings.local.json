@@ -34,7 +34,11 @@
       "Bash(done)",
       "Bash(git rebase:*)",
       "Bash(GIT_EDITOR=true git rebase --continue)",
-      "Bash(git stash:*)"
+      "Bash(git stash:*)",
+      "Bash(git pull:*)",
+      "Bash(grep:*)",
+      "Bash(find src/handlers -name \"*.ts\" -exec basename {})",
+      "Bash(git -C /Users/yegecali/Projects/vscode-custom-extension log --oneline -5)"
     ]
   }
 }
